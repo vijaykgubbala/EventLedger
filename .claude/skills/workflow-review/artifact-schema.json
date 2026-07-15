@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Review Artifact",
+  "description": "Captures review findings and their dispositions for audit trail.",
+  "type": "object",
+  "required": ["version", "metadata", "findings", "summary"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["timestamp", "branch", "commitSha", "filesReviewed"],
+      "properties": {
+        "timestamp": { "type": "string", "format": "date-time" },
+        "branch": { "type": "string" },
+        "baseBranch": { "type": "string", "description": "Always \"master\" for this repo" },
+        "commitSha": { "type": "string" },
+        "issue": { "type": ["integer", "null"], "description": "GitHub issue number this review is scoped to, if any" },
+        "filesReviewed": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "agent", "severity", "file", "summary", "detail", "disposition"],
+        "properties": {
+          "id": { "type": "string" },
+          "agent": { "type": "string", "description": "e.g. review-security" },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "warning", "suggestion"],
+            "description": "Matches the vocabulary defined in .claude/agents/review-*.md"
+          },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "summary": { "type": "string", "description": "One-sentence statement of the defect, per each review-*.md agent's Output format" },
+          "detail": { "type": "string", "description": "Concrete inputs/state that trigger the wrong behavior — the agents' field name is \"detail\", not \"failure_scenario\"" },
+          "disposition": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["pending", "addressed", "ignored", "deferred"]
+              },
+              "reasoning": { "type": ["string", "null"] },
+              "commit": { "type": ["string", "null"] },
+              "issue": { "type": ["integer", "null"], "description": "Follow-up issue number, if deferred" },
+              "timestamp": { "type": ["string", "null"], "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["totalFindings", "bySeverity", "byDisposition"],
+      "properties": {
+        "totalFindings": { "type": "integer" },
+        "bySeverity": {
+          "type": "object",
+          "properties": {
+            "critical": { "type": "integer" },
+            "warning": { "type": "integer" },
+            "suggestion": { "type": "integer" }
+          }
+        },
+        "byDisposition": {
+          "type": "object",
+          "properties": {
+            "pending": { "type": "integer" },
+            "addressed": { "type": "integer" },
+            "ignored": { "type": "integer" },
+            "deferred": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}

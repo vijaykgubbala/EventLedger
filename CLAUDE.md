@@ -56,7 +56,16 @@ decisions.
 | [`architecture-guide`](.claude/skills/architecture-guide/SKILL.md) | Checking a proposed change against `architecture/` before implementing it |
 | [`commit`](.claude/skills/commit/SKILL.md) | Creating a git commit via the `committer` agent (named-file staging, secret-scan, no `--amend` after a hook failure) |
 | [`test-dotnet`](.claude/skills/test-dotnet/SKILL.md) | Running `dotnet test` with coverage once the code pass exists, flagging under-80% coverage |
-| [`workflow-review`](.claude/skills/workflow-review/SKILL.md) | Parallel-dispatching all `review-*` agents over a change and walking through merged findings |
+| [`workflow-brainstorm`](.claude/skills/workflow-brainstorm/SKILL.md) | Exploring approach options for a GitHub issue before planning — writes `docs/brainstorms/` |
+| [`workflow-plan`](.claude/skills/workflow-plan/SKILL.md) | Turning a brainstorm (or a fresh issue) into an ordered, checkbox implementation plan — writes `docs/plans/` |
+| [`workflow-execute`](.claude/skills/workflow-execute/SKILL.md) | TDD implementation of a plan on a feature branch, incremental commits |
+| [`workflow-handoff`](.claude/skills/workflow-handoff/SKILL.md) | Writing the Release Notes / Risk Analysis / Test Coverage artifact, then pushing and opening the PR |
+| [`workflow-review`](.claude/skills/workflow-review/SKILL.md) | Parallel-dispatching all `review-*` agents over a PR's diff, persisting findings to `docs/reviews/`, and walking through them with disposition tracking |
+| [`workflow-compound`](.claude/skills/workflow-compound/SKILL.md) | Capturing solved problems and durable patterns into `docs/solutions/` and `docs/patterns/` after a batch of stories |
+
+See [AIDLC-USAGE-GUIDE.md](AIDLC-USAGE-GUIDE.md) for how the six
+`workflow-*` skills chain together per GitHub issue, and
+[docs/CLAUDE.md](docs/CLAUDE.md) for the `docs/` directory they write to.
 
 ## Agent pointers
 

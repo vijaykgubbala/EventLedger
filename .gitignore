@@ -53,3 +53,6 @@ Thumbs.db
 
 # Claude Code local settings (machine-specific permissions)
 .claude/settings.local.json
+
+# workflow-review scratch space (per-agent JSON before merge into docs/reviews/<file>.json)
+docs/reviews/.tmp/

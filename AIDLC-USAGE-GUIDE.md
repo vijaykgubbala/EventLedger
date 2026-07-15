@@ -1,53 +1,45 @@
 # AIDLC Usage Guide — Event Ledger
 
-How to run the AIDLC (AI-Driven Development Life Cycle) six-command
-workflow — `/brainstorm` → `/plan` → `/execute` → `/review` → `/compound`
-→ `/handover` — against this repository's GitHub issues, end to end.
+How to run the AIDLC (AI-Driven Development Life Cycle) six-skill
+workflow — `workflow-brainstorm` → `workflow-plan` → `workflow-execute`
+→ `workflow-handoff` → `workflow-review` → `workflow-compound` — against
+this repository's GitHub issues, end to end.
 
-## Confidence legend
+## Provenance
 
-This revision corrects the first draft, which stated invented CLI flags as
-if they were verified fact. To avoid repeating that, every claim below is
-tagged:
+These are now **real, installed Claude Code skills** under
+`.claude/skills/workflow-*/`, not a description of commands that live
+somewhere else. They're adapted from a larger reference workflow built
+for a multi-repo hub with a richer external work-item tracker. Three
+deliberate differences from that reference, since EventLedger doesn't
+share its constraints:
 
-- **✅ Confirmed** — you stated this directly, or it's verified against
-  this repo's actual state (git log, real files, real issue numbers).
-- **💡 Recommended** — my proposal for wiring AIDLC into this repo's
-  existing `.claude/` tooling. Not something AIDLC does natively as far as
-  I know — a suggestion you can take or leave.
-- **❓ Assumed** — a gap you haven't specified yet; my best guess, called
-  out so it doesn't get mistaken for something you confirmed.
+1. **GitHub Issues, not an external work-item tracker.** Every work-item resolve/comment/assign/start operation in the reference is replaced with a direct `gh issue` call. GitHub issues are only ever `OPEN`/`CLOSED` — there's no multi-stage state ladder to mirror, and none is added here.
+2. **No multi-repo docs routing.** The reference routes docs to a per-subrepo path or a shared hub path depending on which of several repos a change touches. EventLedger is one repo — docs always live under `docs/`, so that whole routing step is dropped.
+3. **`workflow-handoff` pushes the branch and opens a GitHub PR.** In the reference, Handoff only writes the artifact (Release Notes / Risk Analysis / Test Coverage); PR creation is a separate tool tied to the external tracker. EventLedger has no equivalent separate tool, so PR creation was folded into Handoff — this is the one place this repo's behavior is a genuine addition beyond the reference, not just a trim.
+
+Every other mechanic below — the plan checkbox format, the TDD execute loop, the review artifact's disposition tracking, the compound solution/pattern split — is a direct, verified port of the reference skill's actual behavior, not a guess.
 
 ## Quick reference
 
-| Phase | Command | Input | What it does ✅ | GitHub action |
+| Phase | Skill | Input | Writes to | GitHub action |
 |---|---|---|---|---|
-| Brainstorm | `/brainstorm <issue-id>` | An issue ID | Brainstorms approach for that specific ticket | ❓ output location — see [Brainstorm phase](#brainstorm-phase) |
-| Plan | `/plan <issue-id>` | An issue ID | Plans the implementation for that ticket | ❓ output location — see [Plan phase](#plan-phase) |
-| Execute | `/execute <issue-id>` | An issue ID | Makes the code modifications for that ticket | Commits on a story branch (💡 recommended) |
-| Review | `/review <issue-id>` | An issue ID | Reviews the code **and** runs the test cases | 💡 wired to `workflow-review` + `test-dotnet` skills |
-| Compound | `/compound` | ❓ unconfirmed | ❓ not covered in your clarification — see [Compound phase](#compound-phase) | ❓ unconfirmed |
-| Handover | `/handover <issue-id>` | An issue ID | **Pushes the code to GitHub and creates a PR** | `git push` + `gh pr create`, `Closes #<id>` |
+| Brainstorm | `workflow-brainstorm` | Issue number or free-text topic | `docs/brainstorms/YYYY-MM-DD-<slug>-brainstorm.md` | Comment on the issue |
+| Plan | `workflow-plan` | Issue number or free-text topic | `docs/plans/YYYY-MM-DD-<type>-<name>-plan.md` | Comment on the issue |
+| Execute | `workflow-execute` | Issue number or plan file path | Source code + tests, on a `<type>/<issue>-<slug>` branch | Branch created, incremental commits, comment on the issue |
+| Handoff | `workflow-handoff` | Issue number | `docs/handoffs/YYYY-MM-DD-HHMMSS-<branch>-handoff.md` | `git push` + `gh pr create`, `Closes #<id>` |
+| Review | `workflow-review` | Issue number or `continue` | `docs/reviews/YYYY-MM-DD-HHMMSS-<branch>.json` | Fix-up commits on the same branch/PR |
+| Compound | `workflow-compound` | `context` or nothing | `docs/solutions/<category>/`, `docs/patterns/` | Comment on the issue (if resolvable) |
 
-The five confirmed commands all take **an issue ID as their input** — not
-a free-text prompt, not a flag-laden invocation. The first draft of this
-guide invented flags like `--agents`, `--story`, `--validate-with`; none
-of that was real. This version only asserts the issue-ID argument, since
-that's what you actually told me.
+All six take a **GitHub issue number** as their primary argument, exactly as you specified. `docs/CLAUDE.md` documents the full directory structure these skills write to and how it relates to `architecture/`/`standards/`.
 
 ## Overview
 
-AIDLC is a six-command workflow, applied here **per GitHub issue**: give
-`/brainstorm`, `/plan`, `/execute`, `/review`, and `/handover` the same
-issue ID in sequence, and that one story moves from idea to an open PR.
-Repeat the loop for each of the 9 story issues already open in this repo
+Applied per issue, in order: `workflow-brainstorm <N>` → `workflow-plan <N>` → `workflow-execute <N>` → `workflow-handoff <N>` (opens the PR) → `workflow-review <N>` (reviews the PR's diff, fixes findings on the same branch). Repeat for each of the 9 open story issues
 ([#2](https://github.com/vijaykgubbala/EventLedger/issues/2)–[#10](https://github.com/vijaykgubbala/EventLedger/issues/10)
-— [#1](https://github.com/vijaykgubbala/EventLedger/issues/1) is the
-Foundation issue and is already closed). `/compound` sits outside that
-per-issue loop; where exactly it fits is still unconfirmed — see below.
+— [#1](https://github.com/vijaykgubbala/EventLedger/issues/1) is Foundation and already closed). Run `workflow-compound` after a batch of stories (not necessarily every single one — see below), to promote durable lessons into `docs/patterns/`.
 
-**Recommended issue order** (dependency-driven, not issue-number order —
-per each issue's own "Depends on" line):
+**Recommended issue order** (dependency-driven — per each issue's own "Depends on" line):
 
 ```
 #3 (Service separation) → #2 (Core functionality) → #4 (Tracing)
@@ -57,188 +49,91 @@ per each issue's own "Depends on" line):
 
 ## Brainstorm phase
 
-**✅ Confirmed:** `/brainstorm <issue-id>` brainstorms about that specific
-ticket — not a free-text design question, not the whole system at once.
-
-**❓ Assumed — where the output goes.** You didn't say whether Brainstorm's
-output lands as a comment on the issue, an edit to the issue body, or a
-separate file. Two reasonable options, neither confirmed:
-
-- 💡 Post it as a comment on the issue (`gh issue comment <id>`) — keeps
-  the ticket itself as the single record of its own design discussion.
-- 💡 Write it to a scratch file referenced from the issue — better if the
-  brainstorm output is long enough to want its own diff/history.
-
-Until you confirm, default to **issue comment** — it's the lower-ceremony
-option and keeps everything about one story in one place.
-
-**Example for this project:**
+`workflow-brainstorm <issue-id>`: resolves the issue via `gh issue view`, researches the codebase (`Explore` agent against `architecture/`, `standards/`, and `src/` once it exists), asks 3–7 clarifying questions one at a time via `AskUserQuestion`, then proposes 2–3 approaches with a clear recommendation. Writes `docs/brainstorms/YYYY-MM-DD-<topic-slug>-brainstorm.md` and comments the result back onto the issue.
 
 ```
-/brainstorm 3
+workflow-brainstorm 3
 ```
 
-(brainstorms Service Separation — issue [#3](https://github.com/vijaykgubbala/EventLedger/issues/3),
-recommended first per the dependency order above)
+(brainstorms Service Separation — issue #3, recommended first per the dependency order above)
 
-**Sub-agents:** the original spec named `RepoCartographer` and
-`DependencyAnalyst` for this phase, to map repo structure and service
-dependencies before proposing anything. ❓ How they're invoked (automatically
-as part of `/brainstorm`, or separately) is unconfirmed — the first draft
-guessed a `--agents` flag with no basis. Treat that detail as open until
-you clarify it.
-
-**What's already true for this repo:** issue [#1](https://github.com/vijaykgubbala/EventLedger/issues/1)
-retroactively documents the Foundation work (`architecture/`, `standards/`,
-etc.) that produced this repo's design decisions — but that work was done
-directly in conversation, **not** via an actual `/brainstorm <issue-id>`
-run, since issue #1 didn't exist yet when it happened. The first draft of
-this guide incorrectly implied `/brainstorm` had already run and produced
-`architecture/`. Correction: the content is *equivalent* to what a
-Brainstorm phase would produce; the command itself never executed.
+**Constraint:** produces documentation only — never touches application code, and never changes the issue's open/closed state (brainstorming isn't "starting work").
 
 ## Plan phase
 
-**✅ Confirmed:** `/plan <issue-id>` plans the implementation for that
-ticket, following on from its Brainstorm output.
-
-**❓ Assumed — output location**, same open question as Brainstorm: issue
-comment (💡 recommended, for the same reason) vs. a separate file. The
-first draft invented a root-level `PLAN.md` and a `docs/adr/NNNN-title.md`
-convention — neither confirmed; dropped here rather than repeated.
-
-**Example for this project:**
+`workflow-plan <issue-id>`: checks `docs/brainstorms/` for a prior brainstorm on this issue and uses its recommendation as input, researches the codebase and `docs/solutions/` for relevant prior lessons, runs the **architecture pre-flight** (invokes the `architecture-guide` skill whenever the plan touches `src/`, and rewrites any step that would violate a returned layer rule before the plan is written), resolves every open risk via `AskUserQuestion` before writing anything, then writes a plan with ordered, checkbox implementation steps and a Testing Strategy section (test cases listed *before* the implementation steps they verify — test-writing steps must precede implementation steps in the checkbox order).
 
 ```
-/plan 3
+workflow-plan 3
 ```
 
-**What the plan should reference** (💡 recommended content, not a command
-behavior I can confirm): the relevant `architecture/*.md` and
-`standards/*.md` docs that already own the decisions for that story — e.g.
-for issue #3, `standards/backend-architecture.md` and
-`standards/service-boundaries.md`. Pointing into those docs rather than
-re-deriving the design keeps the plan short and avoids restating a
-decision that's already recorded.
+Writes `docs/plans/YYYY-MM-DD-<type>-<name>-plan.md`. Never leaves an unresolved risk or open question in the final document.
 
 ## Execute phase
 
-**✅ Confirmed:** you give `/execute <issue-id>`, and it makes the code
-modifications for that ticket.
-
-**Example for this project:**
+`workflow-execute <issue-id>`: loads the plan, creates a `<type>/<issue-id>-<slug>` branch (`feat/3-service-separation`; `docs/10-readme` for the README-only story), breaks the plan into tracked tasks, runs the architecture pre-flight again immediately before writing code, then executes each task as red‑green‑refactor TDD — failing test first, minimum implementation, refactor with tests green, incremental commit via the `commit` skill, check off the plan item.
 
 ```
-/execute 3
+workflow-execute 3
 ```
 
-**💡 Recommended — branch per story:** since Handover (below) pushes and
-opens a PR, Execute should commit to a story branch rather than directly
-on `master` — a PR needs a non-default branch to diff against. Suggested
-naming: `story/<issue-id>-<slug>`, e.g. `story/3-service-separation`.
-This wasn't specified in your clarification; flagging it as the one
-structural inference required to make Handover's PR step make sense.
+Two things carried over from the reference that are worth calling out because they're easy to skip past: the **`AppMarker.cs` / `public partial class Program`** requirement (needed for `WebApplicationFactory<Program>` in the cross-service integration test — add it before Story 8, not after discovering the test project won't compile), and the **`.claude/settings.json` pollution check** before and after every branch (session-local permission grants get auto-appended during a session; revert them before they pollute a commit diff).
 
-**💡 Recommended — commit discipline:** one commit per logical change
-within the story is fine; what matters is that the whole story stays on
-its own branch and doesn't get mixed with another story's changes.
-Message convention: `<type>(<scope>): <summary>`, ending with
-`Closes #<issue-id>` and the `Co-Authored-By: Claude Sonnet 5
-<noreply@anthropic.com>` trailer — the latter is ✅ confirmed against this
-repo's actual commit history; the former is 💡 proposed (only `docs:` has
-been used in this repo so far, so the full `{feat, fix, test, docs,
-chore}` scheme is aspirational, not yet observed).
+Ends with `/simplify` over the diff (gated by a targeted test re-run before committing anything non-trivial it proposes), then a completion comment on the issue suggesting `workflow-handoff` next.
+
+## Handoff phase
+
+`workflow-handoff <issue-id>`: writes the handoff artifact — Release Notes (plain-language, for an evaluator reading the PR, not a commit-message rehash), Risk Analysis (one row per area touched: blast radius, reviewer focus, mitigation), Test Coverage (planned-vs-actual reconciled against the plan's Testing Strategy, plus a "What's Not Tested" narrative) — to `docs/handoffs/`, **then pushes the branch and opens the PR**:
+
+```
+workflow-handoff 3
+```
+
+PR body includes the Release Notes, a link to the full handoff file, and `Closes #3`. This is the step that actually ships a story's code to GitHub — per the Constraints in `workflow-handoff/SKILL.md`, it's optional in the reference this is adapted from, but not optional here, since it's the only path to a PR.
+
+**Still open:** whether the PR gets merged by you manually after review, or there's a separate merge step this guide should also cover. Not resolved yet — flagging it rather than guessing, same as the last revision.
 
 ## Review phase
 
-**✅ Confirmed:** `/review <issue-id>` reviews the code **and executes the
-test cases** — both, not just one.
-
-**💡 Recommended wiring** to this repo's existing tooling:
-- Code review → the `workflow-review` skill, which dispatches all five
-  `review-*` agents (`review-correctness`, `review-dotnet`,
-  `review-testing`, `review-security`, `review-maintainability`) in
-  parallel and merges their `critical`/`warning`/`suggestion` findings.
-  This severity vocabulary is ✅ confirmed — it's defined verbatim in each
-  `.claude/agents/review-*.md` file.
-- Running test cases → the `test-dotnet` skill (`dotnet test` with
-  coverage collection, flags anything under 80%).
-
-**Example for this project:**
+`workflow-review <issue-id>` (run against the PR `workflow-handoff` just opened): diffs the branch against `master`, discovers which `review-*` agents are relevant by reading their trigger descriptions, dispatches all five in parallel (`review-correctness`, `review-dotnet`, `review-testing`, `review-security`, `review-maintainability`) using each agent's own `subagent_type` (not `general-purpose`, so its tool restrictions apply), auto-retries once on a bad response, and persists everything to `docs/reviews/YYYY-MM-DD-HHMMSS-<branch>.json`.
 
 ```
-/review 3
+workflow-review 3
 ```
 
-**What to do with findings:** `critical` findings block moving on — fix
-them on the same story branch before Handover. `warning` findings: fix
-now if small, otherwise note on the issue as a follow-up. `suggestion`
-findings are optional.
+If it comes back clean (zero findings across every agent that ran), it says so and stops — no walkthrough needed. Otherwise, it walks findings one at a time (critical → warning → suggestion) with four options: **Fix this now** (TDD fix, committed, disposition recorded as `addressed`), **Skip — won't fix** (`ignored`, reasoning required), **Defer to later** (`deferred`, reasoning + optional follow-up issue), **Fix all remaining**. Every disposition is written back to the artifact — nothing gets silently resolved. Interrupted a walkthrough? `workflow-review continue` picks up exactly where you left off, from the persisted `pending` findings — it does not re-run the agents.
 
 ## Compound phase
 
-**❓ Not covered in your clarification.** Your message specified
-Brainstorm, Plan, Execute, Review, and Handover precisely, but didn't
-mention Compound. The first draft's description (promote reusable
-patterns from `docs/patterns/` to the shared base repo, run once near the
-end of the project) is carried forward here as a placeholder, but it's
-**unconfirmed** — treat it as the least reliable section of this guide
-until you clarify where it fits relative to the per-issue loop (after
-every story? once at the end? not used for this project at all?).
+`workflow-compound` (no argument = full sweep; `workflow-compound context` = fast, current-conversation-only capture): mines recent commits and, in full mode, does a second pass to catch what the diff alone doesn't show, then writes focused solution files to `docs/solutions/<category>/<slug>-<date>.md` and — only for insights that generalize beyond this one issue — pattern files to `docs/patterns/` (the same directory already seeded with the idempotency-key-race and cancellation-token-propagation lessons from the initial scaffold).
 
-## Handover phase
+Run this after a batch of stories, not after every single one — e.g. once after Phase 1 (#3, #2) lands, again after Phase 3 (#6, #7), and once more at the end. A pattern worth keeping usually only becomes visible after a couple of stories, not after the first.
 
-**✅ Confirmed:** `/handover <issue-id>` pushes the code to GitHub and
-creates a PR.
+## GitHub workflow — the full per-story sequence
 
-**Example for this project:**
+1. `workflow-brainstorm <N>` → comments the issue.
+2. `workflow-plan <N>` → comments the issue.
+3. `workflow-execute <N>` → creates `<type>/<N>-<slug>`, commits incrementally, comments the issue when done.
+4. `workflow-handoff <N>` → writes the handoff doc, pushes, opens the PR (`Closes #<N>`), comments the issue with the PR link.
+5. `workflow-review <N>` → reviews the PR's diff; any fixes land as additional commits on the same branch.
+6. You merge the PR (mechanics not yet finalized — see Handoff above). Merging closes issue `#N` via the `Closes #<N>` reference in the PR body.
+7. Periodically: `workflow-compound` to promote durable lessons.
 
-```
-/handover 3
-```
-
-**💡 Recommended mechanics** (the "how," since you confirmed the "what"
-but not the exact mechanics):
-- `git push -u origin story/3-service-separation`
-- `gh pr create --title "Story: Service separation" --body "Closes #3" --base master`
-
-**❓ Assumed — who merges, and when.** You said Handover creates the PR;
-you didn't say whether Handover also merges it, or whether merging is a
-separate manual step (e.g. you review the PR yourself, or a final
-end-of-project pass merges all nine). Left open rather than guessed.
-
-**❓ Assumed — final submission Handover.** It's unclear whether there's
-also a *final* Handover pass across the whole project (finalizing
-`README.md`'s three `TODO` stubs, confirming the commit history reads as
-a narrative) distinct from the per-story `/handover <issue-id>` calls, or
-whether the last story's Handover doubles as that. The first draft assumed
-a single project-wide Handover step; that's now superseded by the
-per-issue Handover you described, but the README-finalization work still
-needs to happen somewhere — flagging it so it doesn't fall through the
-cracks. Simplest assumption until told otherwise: **fold README
-finalization into issue #10's own Execute/Review/Handover cycle**, since
-issue #10 already exists specifically for that ("Story 9: README").
+Commit trailer convention carried over unchanged from before: every commit ends with `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` — verified against this repo's actual history.
 
 ## Per-story sequence diagram
 
 ```mermaid
 flowchart TD
-    A["/brainstorm &lt;issue-id&gt;<br/>brainstorm the ticket"] -->|"❓ comment on issue, or file"| B["/plan &lt;issue-id&gt;<br/>plan the implementation"]
-    B -->|"❓ comment on issue, or file"| C["/execute &lt;issue-id&gt;<br/>you give the issue ID; code modifications happen"]
-    C -->|"commits on story/&lt;id&gt;-slug branch"| D["/review &lt;issue-id&gt;<br/>review code + run test cases"]
-    D -->|"critical findings"| E["fix on same branch"]
-    E --> D
-    D -->|"clean"| F["/handover &lt;issue-id&gt;<br/>push branch + open PR"]
-    F -->|"git push + gh pr create, Closes #id"| G["PR open — ❓ merge step unconfirmed"]
+    A["workflow-brainstorm &lt;N&gt;"] -->|"docs/brainstorms/*.md + issue comment"| B["workflow-plan &lt;N&gt;"]
+    B -->|"docs/plans/*.md + issue comment"| C["workflow-execute &lt;N&gt;"]
+    C -->|"branch + incremental commits + issue comment"| D["workflow-handoff &lt;N&gt;"]
+    D -->|"docs/handoffs/*.md, git push, gh pr create, Closes #N"| E["workflow-review &lt;N&gt;"]
+    E -->|"critical findings"| F["Fix this now — TDD fix, commit"]
+    F --> E
+    E -->|"clean, or all findings dispositioned"| G["PR ready — you merge"]
     G --> H{"More story issues?"}
     H -->|"yes, next in dependency order"| A
-    H -->|"no, all 9 done"| I["/compound — ❓ unconfirmed placement"]
+    H -->|"no, all 9 done"| I["workflow-compound"]
     I --> J["Submission-ready repo"]
 ```
-
-This loop replaces the first draft's single-pass
-Brainstorm→Plan→Execute→Review→Compound→Handover sequence, which assumed
-one project-wide run of each command. What you actually described is a
-loop of Brainstorm→Plan→Execute→Review→Handover **per issue**, run nine
-times (once for each open story issue), with Compound's position still to
-be confirmed.
