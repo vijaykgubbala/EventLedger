@@ -1,6 +1,12 @@
+using EventLedger.Gateway.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddGatewayInfrastructure();
+builder.Services.AddControllers();
+
 var app = builder.Build();
 
-app.MapGet("/", () => "Hello World!");
+app.MapControllers();
 
 app.Run();

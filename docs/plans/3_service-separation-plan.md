@@ -23,25 +23,25 @@ disagreement — see Decisions Made item 2 and Known Constraints below.
 
 ### Phase 1: Project scaffolding (both services)
 
-- [ ] `dotnet new web -o src/EventLedger.Gateway` (minimal template — no generated controllers/Swagger to clean up)
-- [ ] `dotnet new web -o src/EventLedger.AccountService`
-- [ ] `builder.Services.AddControllers()` in each `Program.cs` (MVC controller support is part of the shared ASP.NET Core framework, no extra package)
-- [ ] Create `EventLedger.sln` at repo root; add both projects
-- [ ] Create `Controllers/`, `Application/`, `Domain/`, `Infrastructure/`, `Middleware/` folders in each service per [standards/backend-architecture.md](../../standards/backend-architecture.md)
-- [ ] `dotnet new xunit -o tests/EventLedger.Gateway.Tests`; add `Microsoft.AspNetCore.Mvc.Testing` package; project reference to `EventLedger.Gateway`
-- [ ] `dotnet new xunit -o tests/EventLedger.AccountService.Tests`; same, referencing `EventLedger.AccountService`
-- [ ] Add both test projects to the `.sln`
+- [x] `dotnet new web -o src/EventLedger.Gateway` (minimal template — no generated controllers/Swagger to clean up)
+- [x] `dotnet new web -o src/EventLedger.AccountService`
+- [ ] `builder.Services.AddControllers()` in each `Program.cs` (MVC controller support is part of the shared ASP.NET Core framework, no extra package) — deferred to Phase 2's `Program.cs` rewrite
+- [x] Create `EventLedger.sln` at repo root; add both projects
+- [x] Create `Controllers/`, `Application/`, `Domain/`, `Infrastructure/`, `Middleware/` folders in each service per [standards/backend-architecture.md](../../standards/backend-architecture.md)
+- [x] `dotnet new xunit -o tests/EventLedger.Gateway.Tests`; add `Microsoft.AspNetCore.Mvc.Testing` package; project reference to `EventLedger.Gateway`
+- [x] `dotnet new xunit -o tests/EventLedger.AccountService.Tests`; same, referencing `EventLedger.AccountService`
+- [x] Add both test projects to the `.sln`
 
 ### Phase 2: `Program.cs` orchestrator + `AppMarker`
 
-- [ ] Test: `EventLedger.Gateway.Tests` — constructing a `WebApplicationFactory<Program>` and its client doesn't throw (integration, Phase 2)
-- [ ] Test: `EventLedger.AccountService.Tests` — same boot-smoke-test (integration, Phase 2)
-- [ ] Implement: `src/EventLedger.Gateway/AppMarker.cs` — `public partial class Program { }`, file scope, no enclosing namespace (top-level statements already generate `Program` in the global namespace — a `partial` inside any namespace would create a different, unrelated type)
-- [ ] Implement: `src/EventLedger.AccountService/AppMarker.cs` — same
-- [ ] Implement: `src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs` — `AddGatewayInfrastructure(this WebApplicationBuilder builder)`, currently returns `builder` unchanged (populated by issues #2/#4/#6 — this is the one call site each of those stories adds a line to, so `Program.cs`'s shape never needs to change again)
-- [ ] Implement: `src/EventLedger.AccountService/Infrastructure/ServiceCollectionExtensions.cs` — `AddAccountServiceInfrastructure(this WebApplicationBuilder builder)`, same
-- [ ] Implement: `src/EventLedger.Gateway/Program.cs` — orchestrator only: `builder.AddGatewayInfrastructure();`, `builder.Services.AddControllers();`, Serilog wiring (Phase 3), `app.MapControllers(); app.Run();`
-- [ ] Implement: `src/EventLedger.AccountService/Program.cs` — same shape
+- [x] Test: `EventLedger.Gateway.Tests` — constructing a `WebApplicationFactory<Program>` and its client doesn't throw (integration, Phase 2) — confirmed red first (`CS0122: 'Program' is inaccessible`) before `AppMarker.cs` existed
+- [x] Test: `EventLedger.AccountService.Tests` — same boot-smoke-test (integration, Phase 2)
+- [x] Implement: `src/EventLedger.Gateway/AppMarker.cs` — `public partial class Program { }`, file scope, no enclosing namespace (top-level statements already generate `Program` in the global namespace — a `partial` inside any namespace would create a different, unrelated type)
+- [x] Implement: `src/EventLedger.AccountService/AppMarker.cs` — same
+- [x] Implement: `src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs` — `AddGatewayInfrastructure(this WebApplicationBuilder builder)`, currently returns `builder` unchanged (populated by issues #2/#4/#6 — this is the one call site each of those stories adds a line to, so `Program.cs`'s shape never needs to change again)
+- [x] Implement: `src/EventLedger.AccountService/Infrastructure/ServiceCollectionExtensions.cs` — `AddAccountServiceInfrastructure(this WebApplicationBuilder builder)`, same
+- [x] Implement: `src/EventLedger.Gateway/Program.cs` — orchestrator only: `builder.AddGatewayInfrastructure();`, `builder.Services.AddControllers();`, `app.MapControllers(); app.Run();` (Serilog wiring lands as an addition in Phase 3, not a reshape)
+- [x] Implement: `src/EventLedger.AccountService/Program.cs` — same shape
 
 ### Phase 3: Structured logging (both services)
 
