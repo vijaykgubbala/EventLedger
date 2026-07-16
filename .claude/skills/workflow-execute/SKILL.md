@@ -33,8 +33,8 @@ If the plan's `**Issue:**` line has a number, use it. Otherwise ask the user via
 ### 2b: Ensure you are on the correct feature branch
 
 1. Check the current branch name (`git branch --show-current`).
-2. If it already contains the issue number (e.g. `feat/3-service-separation`), stay on it.
-3. If you are on a **different** feature branch or `master`, create one: `git checkout -b <type>/<issue-number>-<slug>` — `<type>` is `feat` for new functionality, `fix` for bug fixes, `docs` for documentation-only stories (e.g. issue #10, the README story). `<slug>` is a short kebab-case description matching the issue title.
+2. If it already contains the issue number (e.g. `3_service-separation`), stay on it.
+3. If you are on a **different** feature branch or `master`, create one: `git checkout -b <issue-number>_<slug>` — matching the same issue-anchored convention as `workflow-brainstorm`/`workflow-plan`'s document filenames, so the branch, its brainstorm, and its plan all share one identifier. `<slug>` is a short kebab-case description matching the issue title. No `feat`/`fix`/`docs` type prefix — the issue itself (its title, its milestone) already carries that distinction; a prefix would just be a second place for it to go stale.
 4. Do not commit directly to `master` for any story that has its own issue — branch first, always.
 
 ### 2c: Verify assignment
@@ -72,7 +72,7 @@ For each task, follow the red-green-refactor TDD cycle:
 3. **Red: Write failing tests first.** Write the test(s) specified in the plan's Testing Strategy for this task. Run them and confirm they fail. If they pass without implementation, the tests are not asserting the right thing — fix them.
 4. **Green: Write the minimum implementation.** Just enough code to make the failing tests pass. Run tests and confirm they pass.
 5. **Refactor: Clean up while keeping tests green.** Remove duplication, improve naming, simplify logic — without changing behavior. Run tests again to confirm they still pass.
-6. **Commit incrementally.** Dispatch the `commit` skill (→ `committer` agent) with the exact files this task touched and a message following `<type>(<scope>): <summary>` — the `committer` agent stages only those named files and refuses on an apparent secret. Explain *why*, not just *what*.
+6. **Commit incrementally.** Dispatch the `commit` skill with the exact files this task touched, plus commit-message guidance (a suggested `<type>(<scope>): <summary>` and the *why*, not just the *what*) for the `committer` agent to compose the final message from — the agent writes the actual text itself per its own procedure, and stages only those named files, refusing on an apparent secret.
 7. **Check off the plan item.** Edit the plan file to change `- [ ]` to `- [x]` for the completed item.
 8. Mark the task as `completed`.
 

@@ -37,7 +37,7 @@ agents (`critical` / `warning` / `suggestion`) — not a 4-tier
 3. Categorize: new vs. modified vs. deleted; file types; which service(s) (`EventLedger.Gateway`, `EventLedger.AccountService`, both, or docs-only) are affected.
 4. Create `docs/reviews/` if it doesn't exist.
 5. **Set up `$REVIEW_DIR`**: `docs/reviews/.tmp/<branch-slug>/` (branch slug: `git branch --show-current | tr '/' '-' | tr '[:upper:]' '[:lower:]'`). `mkdir -p` it — this holds the shared diff/file list and is deleted in Cleanup.
-6. Create the review artifact: filename `YYYY-MM-DD-HHMMSS-<branch-slug>.json` under `docs/reviews/`. Populate `metadata`: `timestamp`, `branch`, `commitSha` (`git rev-parse HEAD`), `issue` (from `$ARGUMENTS` if numeric, else the branch name's leading digit sequence, else `null`), `filesReviewed`. Empty `findings` array.
+6. Create the review artifact: filename `<branch-slug>.json` under `docs/reviews/` — since branches are now named `<issue-id>_<slug>`, the branch slug already is the issue-anchored identifier, so no separate timestamp prefix is needed. If the file already exists (a second review pass on the same branch), that's expected — see Continue Mode above for resuming it rather than starting fresh. Populate `metadata`: `timestamp`, `branch`, `commitSha` (`git rev-parse HEAD`), `issue` (from `$ARGUMENTS` if numeric, else the branch name's leading digit sequence, else `null`), `filesReviewed`. Empty `findings` array.
 
 ## Phase 1: Discover Review Agents
 

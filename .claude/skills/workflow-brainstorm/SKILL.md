@@ -55,7 +55,12 @@ Based on the codebase research and the user's answers, propose **2 to 3 approach
 
 Before writing, run the docs bootstrap: if `docs/CLAUDE.md` does not exist, this has already gone wrong — stop and tell the user (it should exist; see [docs/CLAUDE.md](../../../docs/CLAUDE.md)). Create `docs/brainstorms/` if it does not exist yet.
 
-Write the brainstorm to `docs/brainstorms/YYYY-MM-DD-<topic-slug>-brainstorm.md` using today's date and a short slug derived from the topic.
+Write the brainstorm to `docs/brainstorms/<issue-id>_<topic-slug>-brainstorm.md`
+when an issue was resolved in Step 0 (`<issue-id>` bare, e.g. `2`) — the
+issue number is the stable, permanent identifier; a date only tells you
+when the file was written. For a free-text topic with no issue, fall
+back to `docs/brainstorms/YYYY-MM-DD-<topic-slug>-brainstorm.md`, since
+there's no issue number to anchor the filename to.
 
 ### Document structure
 
