@@ -58,7 +58,7 @@ disagreement — see Decisions Made item 2 and Known Constraints below.
 
 ### Phase 5: Gateway configuration for the Account Service base URL
 
-- [ ] Implement: `src/EventLedger.Gateway/appsettings.json` — add an `AccountService:BaseUrl` section (e.g. `"http://localhost:5051"` for local dev) per [architecture/deployment-architecture.md](../../architecture/deployment-architecture.md). No test — nothing consumes this value until issue #2 adds the outbound call; exercised indirectly then.
+- [x] Implement: `src/EventLedger.Gateway/appsettings.json` — added `AccountService:BaseUrl` = `http://localhost:5199`, matching the Account Service's actual `dotnet run` launch profile port (checked `Properties/launchSettings.json` rather than guessing a port), per [architecture/deployment-architecture.md](../../architecture/deployment-architecture.md). No test — nothing consumes this value until issue #2 adds the outbound call; exercised indirectly then.
 
 ## Testing Strategy
 
