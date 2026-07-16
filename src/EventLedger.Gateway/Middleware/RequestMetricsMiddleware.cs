@@ -14,12 +14,29 @@ public static class RequestMetricsMiddleware
     {
         return app.Use(async (context, next) =>
         {
-            await next();
-
-            var endpoint = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "unknown";
-            RequestCounter.Add(1,
-                new KeyValuePair<string, object?>("endpoint", endpoint),
-                new KeyValuePair<string, object?>("status_code", context.Response.StatusCode));
+            try
+            {
+                await next();
+                RecordMeasurement(context, context.Response.StatusCode);
+            }
+            catch
+            {
+                // context.Response.StatusCode isn't reliably set to its final value yet at this
+                // point — that happens in the hosting layer's outer catch, above this middleware.
+                // An unhandled exception always ends in a 500 (unless the response has already
+                // started, in which case the connection is aborted rather than completed), so
+                // record it explicitly here and rethrow to preserve normal exception propagation.
+                RecordMeasurement(context, StatusCodes.Status500InternalServerError);
+                throw;
+            }
         });
+    }
+
+    private static void RecordMeasurement(HttpContext context, int statusCode)
+    {
+        var endpoint = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "unknown";
+        RequestCounter.Add(1,
+            new KeyValuePair<string, object?>("endpoint", endpoint),
+            new KeyValuePair<string, object?>("status_code", statusCode));
     }
 }
