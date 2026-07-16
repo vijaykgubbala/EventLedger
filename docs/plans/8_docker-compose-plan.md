@@ -54,7 +54,7 @@ fix here.
 
 ### Phase 2: `docker-compose.yml`
 
-- [ ] Write `docker-compose.yml` at repo root:
+- [x] Write `docker-compose.yml` at repo root:
   - `account-service`: `build: context: ./src/EventLedger.AccountService`,
     `ports: ["5199:8081"]`,
     `environment: ASPNETCORE_HTTP_PORTS=8081` (redundant with the
