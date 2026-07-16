@@ -49,10 +49,10 @@ anything there either).
 No dedicated tests for this phase — plain types with no framework
 dependency, exercised indirectly by every later phase's tests.
 
-- [ ] `src/EventLedger.Gateway/Domain/TransactionType.cs` — `enum TransactionType { Credit, Debit }`
-- [ ] `src/EventLedger.Gateway/Domain/EventRecord.cs` — plain type matching the `events` schema in [architecture/data-model.md](../../architecture/data-model.md) (`Id`, `EventId`, `AccountId`, `Type`, `Amount`, `Currency`, `EventTimestamp`, `MetadataJson`, `ReceivedAt`)
-- [ ] `src/EventLedger.AccountService/Domain/TransactionType.cs` — same enum, independent copy (no shared assembly between services, per [standards/service-boundaries.md](../../standards/service-boundaries.md))
-- [ ] `src/EventLedger.AccountService/Domain/TransactionRecord.cs` — matching the `transactions` schema (`Id`, `EventId`, `AccountId`, `Type`, `Amount`, `AppliedAt`)
+- [x] `src/EventLedger.Gateway/Domain/TransactionType.cs` — `enum TransactionType { Credit, Debit }`
+- [x] `src/EventLedger.Gateway/Domain/EventRecord.cs` — plain type matching the `events` schema in [architecture/data-model.md](../../architecture/data-model.md) (`Id`, `EventId`, `AccountId`, `Type`, `Amount`, `Currency`, `EventTimestamp`, `MetadataJson`, `ReceivedAt`)
+- [x] `src/EventLedger.AccountService/Domain/TransactionType.cs` — same enum, independent copy (no shared assembly between services, per [standards/service-boundaries.md](../../standards/service-boundaries.md))
+- [x] `src/EventLedger.AccountService/Domain/TransactionRecord.cs` — matching the `transactions` schema (`Id`, `EventId`, `AccountId`, `Type`, `Amount`, `AppliedAt`)
 
 ### Phase 2: Infrastructure — persistence (both services)
 
