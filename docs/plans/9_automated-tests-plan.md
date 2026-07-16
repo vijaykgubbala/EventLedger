@@ -70,11 +70,11 @@ already exists and is correct) — every change is test-only or docs-only.
 
 ### Phase 3: README test coverage documentation
 
-- [ ] Fill in `README.md`'s existing `**TODO:**` under "Running the
+- [x] Fill in `README.md`'s existing `**TODO:**` under "Running the
   tests" (currently line 172) with the real `dotnet test` command (the
   fenced block below it is already correct, just currently unreachable
   behind the `TODO` label).
-- [ ] Add a coverage-mapping table immediately after, mapping each
+- [x] Add a coverage-mapping table immediately after, mapping each
   TEST-1..8 criterion (per `.claude/agents/review-testing.md`'s updated
   wording from Phase 2) to its exact covering test file(s) and method
   name(s) — the full mapping is already known from the brainstorm's
