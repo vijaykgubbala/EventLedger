@@ -32,7 +32,7 @@ guide" would be a direct contradiction of its own purpose.
 
 ### Phase 1: Start the live verification environment
 
-- [ ] Run `docker compose up --build -d` from repo root. Confirm both
+- [x] Run `docker compose up --build -d` from repo root. Confirm both
   containers reach `healthy` via `docker compose ps` before proceeding —
   every subsequent phase's commands must be run against this real,
   running stack, not written from memory of expected behavior.
