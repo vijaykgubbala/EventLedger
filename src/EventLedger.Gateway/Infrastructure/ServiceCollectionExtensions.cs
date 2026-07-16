@@ -1,5 +1,7 @@
 using EventLedger.Gateway.Application;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 
 namespace EventLedger.Gateway.Infrastructure;
@@ -15,7 +17,7 @@ public static class ServiceCollectionExtensions
             .CreateLogger();
     }
 
-    public static WebApplicationBuilder AddGatewayInfrastructure(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddGatewayInfrastructure(this WebApplicationBuilder builder, string serviceName)
     {
         builder.Host.UseSerilog();
         builder.Services.AddControllers();
@@ -26,6 +28,11 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<EventValidator>();
         builder.Services.AddScoped<SubmitEventHandler>();
         builder.Services.AddScoped<EventQueryHandler>();
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(r => r.AddService(serviceName))
+            .WithTracing(tracing => tracing
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation());
 
         return builder;
     }

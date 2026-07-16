@@ -2,13 +2,15 @@ using EventLedger.Gateway.Infrastructure;
 using EventLedger.Gateway.Middleware;
 using Serilog;
 
-ServiceCollectionExtensions.BootstrapLogging("EventGateway");
+const string serviceName = "EventGateway";
+
+ServiceCollectionExtensions.BootstrapLogging(serviceName);
 
 try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.AddGatewayInfrastructure();
+    builder.AddGatewayInfrastructure(serviceName);
 
     var app = builder.Build();
 

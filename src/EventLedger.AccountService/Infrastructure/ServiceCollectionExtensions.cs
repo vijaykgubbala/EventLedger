@@ -1,5 +1,7 @@
 using EventLedger.AccountService.Application;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 
 namespace EventLedger.AccountService.Infrastructure;
@@ -15,7 +17,7 @@ public static class ServiceCollectionExtensions
             .CreateLogger();
     }
 
-    public static WebApplicationBuilder AddAccountServiceInfrastructure(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddAccountServiceInfrastructure(this WebApplicationBuilder builder, string serviceName)
     {
         builder.Host.UseSerilog();
         builder.Services.AddControllers();
@@ -24,6 +26,9 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<ApplyTransactionHandler>();
         builder.Services.AddScoped<BalanceQueryHandler>();
         builder.Services.AddScoped<AccountDetailsHandler>();
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(r => r.AddService(serviceName))
+            .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation());
 
         return builder;
     }

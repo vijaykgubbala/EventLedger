@@ -1,0 +1,125 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "timestamp": "2026-07-16T00:00:00Z",
+    "branch": "4_distributed-tracing",
+    "baseBranch": "2_core-functionality",
+    "commitSha": "1932cfd358750c9a294ce9b78d27bda50339a54d",
+    "issue": 4,
+    "filesReviewed": [
+      "src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.AccountService/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.Gateway/Program.cs",
+      "src/EventLedger.AccountService/Program.cs",
+      "tests/EventLedger.Gateway.Tests/ConsoleLogCapture.cs",
+      "tests/EventLedger.Gateway.Tests/InboundTraceparentExtractionTests.cs",
+      "tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
+      "tests/EventLedger.Gateway.Tests/GatewayLoggingTests.cs",
+      "tests/EventLedger.AccountService.Tests/AccountServiceLoggingTests.cs",
+      "standards/backend-architecture.md",
+      "docs/simplify-patterns.md"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "agent": "review-testing",
+      "severity": "critical",
+      "file": "tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
+      "summary": "PostEvents_TraceparentPropagatesOverRealNetworkCall_SameTraceIdInBothServicesLogs never asserts the POST /events response succeeded, so it can pass as a false positive even if the Account Service was never reached at all.",
+      "detail": "If the outbound call fails to be sent, is refused, or the Account Service throws before logging anything, only the Gateway's own request-processing log lines are captured — all necessarily sharing one TraceId since they belong to a single incoming request's Activity. Assert.Single(traceIds) still passes even though the Account Service was never reached and no propagation happened. Fix requires asserting the response succeeded (as the sibling PostEvents_FullFlowThroughRealAccountService_... test already does) and requiring more than one captured log line, not just \"at most one distinct TraceId value.\"",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Added Assert.True(response.StatusCode == HttpStatusCode.Created, ...) and Assert.True(lines.Count >= 2, ...) to the test. Applying this immediately surfaced that CreateFactoriesWithRealNetworking() had never actually worked (the test was passing for the wrong reason since workflow-execute 4) — fixing that required a substantial rewrite of the helper, documented in docs/patterns/2026-07-16-webapplicationfactory-forces-testserver.md. Re-verified 5 consecutive passing runs post-fix.",
+        "commit": "2b81572",
+        "issue": null,
+        "timestamp": "2026-07-16T00:45:00Z"
+      }
+    },
+    {
+      "id": "F2",
+      "agent": "review-testing (independently verified)",
+      "severity": "critical",
+      "file": "tests/EventLedger.Gateway.Tests/InboundTraceparentExtractionTests.cs, tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
+      "summary": "Neither new test would fail if this story's actual deliverable (AddOpenTelemetry()...WithTracing(...) in both services) were deleted entirely — confirmed empirically by temporarily removing both registrations and re-running the full test suite: both tests still passed.",
+      "detail": "System.Net.Http.DiagnosticsHandler injects/extracts the traceparent header unconditionally whenever a real SocketsHttpHandler is used, regardless of OpenTelemetry SDK registration (true since .NET 5). CreateFactoriesWithRealNetworking() uses a real SocketsHttpHandler, so the cross-service test's propagation succeeds via bare BCL behavior alone, independent of this story's code. Combined with the already-known inbound-extraction finding, this means this story ships with zero regression coverage for its own deliverable — a future accidental deletion of the AddOpenTelemetry() calls would not be caught by any test in this diff.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Added OpenTelemetryRegistrationTests.cs to both EventLedger.Gateway.Tests and EventLedger.AccountService.Tests, asserting factory.Services.GetService<TracerProvider>() is non-null — confirmed genuinely red (NullReferenceException/Assert.NotNull failure) before AddOpenTelemetry() existed and green after, unlike the two tests this finding flagged. Re-confirmed the flagged tests genuinely don't cover OTel registration itself by temporarily removing AddHttpClientInstrumentation() from Gateway's ServiceCollectionExtensions.cs and re-running PostEvents_TraceparentPropagatesOverRealNetworkCall_...: it still passed, proving that test's real value is network-propagation coverage (via bare BCL DiagnosticsHandler), not OTel-registration coverage — which is exactly what the new OpenTelemetryRegistrationTests.cs is for. AddHttpClientInstrumentation() restored immediately after.",
+        "commit": "2b81572",
+        "issue": null,
+        "timestamp": "2026-07-16T00:45:00Z"
+      }
+    },
+    {
+      "id": "F3",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "tests/EventLedger.Gateway.Tests/ConsoleLogCapture.cs",
+      "line": 29,
+      "summary": "JsonDocument instances created by JsonDocument.Parse(...) are never disposed, leaking their pooled backing buffer.",
+      "detail": "JsonDocument rents its backing buffer from a shared ArrayPool<byte>; never disposing means the buffer is never returned to the pool. Can't be fixed with a naive `using` since the returned JsonElements are views into the parent document and are used by callers after the method returns (disposing early would throw ObjectDisposedException). Fix: call .Clone() on RootElement before returning — it copies into a self-contained buffer with no parent dependency, letting the JsonDocument be disposed inside the LINQ pipeline.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Wrapped JsonDocument.Parse(line) in a using block and returned doc.RootElement.Clone() instead of the raw RootElement, in both tests/EventLedger.Gateway.Tests/ConsoleLogCapture.cs and the new AccountService.Tests mirror added for F5.",
+        "commit": "2b81572",
+        "issue": null,
+        "timestamp": "2026-07-16T00:45:00Z"
+      }
+    },
+    {
+      "id": "F4",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
+      "line": 71,
+      "summary": "CreateFactoriesWithRealNetworking() can leak a live Kestrel-backed WebApplicationFactory if an exception occurs after the real listener starts but before the tuple is returned.",
+      "detail": "accountServiceFactory.Services.GetRequiredService<IServer>() and the subsequent IServerAddressesFeature/.Addresses.First() calls happen after the real Kestrel host has started listening. If any of these throw, the exception propagates before the caller's `await using` ever executes, so DisposeAsync is never called on a factory with an already-bound TCP listener. Fix: wrap the post-construction calls in try/catch that disposes accountServiceFactory before rethrowing.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "CreateFactoriesWithRealNetworking() wraps the post-construction _ = accountServiceFactory.Services access in try/catch: InvalidCastException (expected — see F1/F2 note on the WebApplicationFactory rewrite) is caught and ignored, any other exception disposes accountServiceFactory before rethrowing to avoid leaking the bound Kestrel socket. Superseded the originally-flagged IServerAddressesFeature/.Addresses.First() code entirely as part of the F1 rewrite, but the leak-prevention intent this finding raised is preserved in the new code.",
+        "commit": "2b81572",
+        "issue": null,
+        "timestamp": "2026-07-16T00:45:00Z"
+      }
+    },
+    {
+      "id": "F5",
+      "agent": "review-maintainability",
+      "severity": "warning",
+      "file": "tests/EventLedger.AccountService.Tests/AccountServiceLoggingTests.cs",
+      "line": 11,
+      "summary": "The Console.Out-capture/JSON-TraceId-parsing pattern this diff's /simplify pass extracted into ConsoleLogCapture.cs still exists as an untouched fourth inline copy in the Account Service test project, and docs/simplify-patterns.md overstates what was actually deduplicated.",
+      "detail": "docs/simplify-patterns.md says the pattern 'grew to 3 near-identical copies before being extracted' — true for the Gateway side, but AccountServiceLoggingTests.cs (same technique, same shape) was never touched. ConsoleLogCapture is internal to EventLedger.Gateway.Tests and can't be referenced across test-project boundaries without a reference this codebase's layout doesn't sanction, so a future reader following the pattern doc's advice for a similar Account Service test will hit this same wall.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Mirrored tests/EventLedger.Gateway.Tests/ConsoleLogCapture.cs into tests/EventLedger.AccountService.Tests/ConsoleLogCapture.cs (deliberate per-test-project copy, same rationale as SqliteTempDbFixture — internal visibility, no cross-test-project references in this codebase's layout), rewired AccountServiceLoggingTests.cs to use it, and corrected docs/simplify-patterns.md's wording to describe this as an intentional mirror rather than implying full deduplication.",
+        "commit": "2b81572",
+        "issue": null,
+        "timestamp": "2026-07-16T00:45:00Z"
+      }
+    },
+    {
+      "id": "F6",
+      "agent": "review-testing",
+      "severity": "suggestion",
+      "file": "none",
+      "summary": "No test verifies the ConfigureResource(r => r.AddService(serviceName)) resource attribute (Decision 4 — reusing the same serviceName string as BootstrapLogging) is actually wired correctly.",
+      "detail": "A test could register a test-only in-memory span exporter and assert the exported span's resource carries service.name equal to \"EventGateway\"/\"AccountService\". Not required by OBS-1/OBS-2 directly; the ConfigureResource call is a single, directly-inspectable line in the reviewed source.",
+      "disposition": {
+        "status": "ignored",
+        "reasoning": "Suggestion-severity, and the underlying line (ConfigureResource(r => r.AddService(serviceName))) is a single, directly-inspectable call — adding a dedicated in-memory span exporter just to assert a resource attribute is disproportionate to the risk for a 4-hour-budget take-home project. No exporter is registered anywhere else in this codebase either (architecture/observability.md records that as a deliberate scope cut), so adding one solely for this test would be inconsistent with that decision.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:45:00Z"
+      }
+    }
+  ],
+  "summary": {
+    "totalFindings": 6,
+    "bySeverity": { "critical": 2, "warning": 3, "suggestion": 1 },
+    "byDisposition": { "pending": 0, "addressed": 5, "ignored": 1, "deferred": 0 }
+  }
+}

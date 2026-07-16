@@ -2,13 +2,15 @@ using EventLedger.AccountService.Infrastructure;
 using EventLedger.AccountService.Middleware;
 using Serilog;
 
-ServiceCollectionExtensions.BootstrapLogging("AccountService");
+const string serviceName = "AccountService";
+
+ServiceCollectionExtensions.BootstrapLogging(serviceName);
 
 try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.AddAccountServiceInfrastructure();
+    builder.AddAccountServiceInfrastructure(serviceName);
 
     var app = builder.Build();
 
