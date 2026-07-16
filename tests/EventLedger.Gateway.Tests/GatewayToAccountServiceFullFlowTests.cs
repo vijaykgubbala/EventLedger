@@ -11,6 +11,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using AccountServiceDbContext = AccountServiceAssembly::EventLedger.AccountService.Infrastructure.AccountDbContext;
 using AccountServiceProgram = AccountServiceAssembly::Program;
 
@@ -63,29 +64,67 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
     }
 
     // TestServer.CreateHandler() (used by CreateFactories() above) bypasses the component that
-    // actually injects the traceparent header, so this helper uses a real, dynamically-assigned
-    // Kestrel port instead, letting the Gateway's HttpClient keep its real SocketsHttpHandler.
-    // See docs/patterns/2026-07-15-diagnosticshandler-bypassed-by-custom-httpmessagehandler.md.
+    // actually injects the traceparent header, so this helper uses a real Kestrel listener
+    // instead, letting the Gateway's HttpClient keep its real SocketsHttpHandler. Getting
+    // WebApplicationFactory to genuinely listen on a real socket needs a fixed port (dynamic-port
+    // discovery via IServerAddressesFeature never resolves here), a CreateHost override (UseKestrel()
+    // from WithWebHostBuilder is silently overridden by WAF's own later TestServer registration),
+    // and a RealHost escape hatch (WAF's own .Server/.Services/.CreateClient() all throw
+    // InvalidCastException once IServer is genuinely Kestrel). Full investigation and rationale:
+    // docs/patterns/2026-07-15-diagnosticshandler-bypassed-by-custom-httpmessagehandler.md and
+    // docs/patterns/2026-07-16-webapplicationfactory-forces-testserver.md.
+    private const string AccountServiceTestAddress = "http://127.0.0.1:58734";
+
+    private sealed class RealKestrelWebApplicationFactory<TProgram> : WebApplicationFactory<TProgram> where TProgram : class
+    {
+        public IHost? RealHost { get; private set; }
+
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            builder.ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder.ConfigureServices(services => services.RemoveAll<IServer>());
+                webHostBuilder.UseKestrel();
+                webHostBuilder.UseUrls(AccountServiceTestAddress);
+            });
+
+            var host = builder.Build();
+            host.Start();
+            RealHost = host;
+            return host;
+        }
+    }
+
     private (WebApplicationFactory<AccountServiceProgram> accountService, WebApplicationFactory<Program> gateway) CreateFactoriesWithRealNetworking()
     {
-        var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>().WithWebHostBuilder(builder =>
-        {
-            builder.UseKestrel();
-            builder.UseUrls("http://127.0.0.1:0");
-            builder.ConfigureServices(ConfigureAccountServiceDb);
-        });
+        var accountServiceFactory = new RealKestrelWebApplicationFactory<AccountServiceProgram>()
+            .WithWebHostBuilder(builder => builder.ConfigureServices(ConfigureAccountServiceDb));
 
-        // Accessing .Services forces the host (including Kestrel) to start listening, so the
-        // real bound address is available immediately afterward.
-        var server = accountServiceFactory.Services.GetRequiredService<IServer>();
-        var realAddress = server.Features.Get<IServerAddressesFeature>()!.Addresses.First();
+        try
+        {
+            // Forces CreateHost to run (populating RealHost) and the real Kestrel listener to
+            // start. The InvalidCastException below is expected — see the class comment above —
+            // and is safe to ignore because RealHost is already populated by the time it's thrown.
+            _ = accountServiceFactory.Services;
+        }
+        catch (InvalidCastException)
+        {
+            // Expected — WAF's own (TServer) cast against the now-real Kestrel IServer.
+        }
+        catch
+        {
+            // A genuine startup failure (e.g. the fixed port is already in use) — the real Kestrel
+            // listener may already be bound by this point, so dispose rather than leak the socket.
+            accountServiceFactory.Dispose();
+            throw;
+        }
 
         var gatewayFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             builder.ConfigureServices(services =>
             {
                 ConfigureGatewayDb(services);
                 // Only the BaseAddress changes — the client keeps its real SocketsHttpHandler.
-                services.AddHttpClient("AccountService", client => client.BaseAddress = new Uri(realAddress));
+                services.AddHttpClient("AccountService", client => client.BaseAddress = new Uri(AccountServiceTestAddress));
             }));
 
         return (accountServiceFactory, gatewayFactory);
@@ -98,10 +137,11 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
         await using var accountServiceFactory = factories.accountService;
         await using var gatewayFactory = factories.gateway;
 
+        HttpResponseMessage? response = null;
         var output = await ConsoleLogCapture.CaptureAsync(async () =>
         {
             using var client = gatewayFactory.CreateClient();
-            await client.PostAsJsonAsync("/events", new
+            response = await client.PostAsJsonAsync("/events", new
             {
                 eventId = "evt-trace-1",
                 accountId = "acct-trace-1",
@@ -112,15 +152,24 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
             });
         });
 
+        // Guards against a false positive: without this, a request that never actually reached
+        // the Account Service would still produce one distinct TraceId (all from the Gateway's
+        // own single request-processing Activity) and the assertions below would pass anyway.
+        Assert.True(response!.StatusCode == HttpStatusCode.Created, $"Status: {response.StatusCode}\n---LOG OUTPUT---\n{output}");
+
+        var lines = ConsoleLogCapture.ParseLogLinesWithTraceId(output);
+
+        // At least two captured lines guards against the false-positive case above by requiring
+        // more than just the Gateway's own logging — combined with the status-code assertion,
+        // this means the Account Service was genuinely reached and logged something too.
+        Assert.True(lines.Count >= 2, $"Expected at least 2 TraceId-bearing log lines, got {lines.Count}.");
+
         // Asserts TraceId equality only, not per-line ServiceName — BootstrapLogging(serviceName)
         // reassigns Serilog's process-wide static Log.Logger, so whichever service boots last in
         // this dual-in-process test can make earlier lines carry the wrong ServiceName. TraceId
         // itself (AsyncLocal-scoped via LogContext) is unaffected — this is a test-environment-
         // only artifact, not a production concern (real deployments are separate OS processes).
-        var traceIds = ConsoleLogCapture.ParseLogLinesWithTraceId(output)
-            .Select(line => line.GetProperty("TraceId").GetString())
-            .Distinct()
-            .ToList();
+        var traceIds = lines.Select(line => line.GetProperty("TraceId").GetString()).Distinct().ToList();
 
         // Exactly one distinct TraceId across every captured log line proves both services
         // logged under the same propagated trace, not two independently-generated ones.

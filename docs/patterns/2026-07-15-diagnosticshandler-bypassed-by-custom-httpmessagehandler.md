@@ -45,12 +45,18 @@ is responsible for — a custom primary-handler substitution cannot observe
 it, no matter how the DI container is configured. The only reliable way to
 test this is to make a **genuine network call** through the real, default
 `SocketsHttpHandler`: start the receiving side as a real, listening
-Kestrel server (`builder.UseKestrel()` + `builder.UseUrls("http://127.0.0.1:0")`
-for an OS-assigned free port, then discover the real bound address via
-`IServer`/`IServerAddressesFeature` — accessing `WebApplicationFactory<T>.Services`
-forces the host, including Kestrel, to actually start listening), and
-point the calling `HttpClient` at that real address **without**
-overriding its primary handler.
+Kestrel server and point the calling `HttpClient` at that real address
+**without** overriding its primary handler.
+
+Getting `WebApplicationFactory<T>` to actually listen on a real socket is
+itself non-trivial — three separate framework behaviors get in the way,
+all confirmed empirically (see
+[2026-07-16-webapplicationfactory-forces-testserver.md](2026-07-16-webapplicationfactory-forces-testserver.md)
+for the full investigation and the working fix). Don't reach for the
+OS-assigned-port + `IServerAddressesFeature` discovery pattern shown in an
+earlier version of this doc — it never actually resolves a real port in
+this environment; use a fixed port and the `CreateHost` override
+documented in that pattern instead.
 
 This is a different concern from "should this test avoid a real network
 call for speed/isolation" — most of this codebase's tests correctly avoid
@@ -73,22 +79,15 @@ services.AddHttpClient("AccountService")
 // DiagnosticsHandler inside it, never runs.
 ```
 
-**Right** — a real Kestrel listener preserves the real transport:
+**Right** — a real Kestrel listener preserves the real transport (see the
+companion pattern doc for why this needs a `CreateHost` override and a
+fixed port rather than the more obvious `WithWebHostBuilder` + dynamic
+port approach):
 
 ```csharp
-var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>()
-    .WithWebHostBuilder(builder =>
-    {
-        builder.UseKestrel();
-        builder.UseUrls("http://127.0.0.1:0");
-    });
-
-var server = accountServiceFactory.Services.GetRequiredService<IServer>();
-var realAddress = server.Features.Get<IServerAddressesFeature>()!.Addresses.First();
-
 // Gateway's HttpClient keeps its default SocketsHttpHandler — only the
 // BaseAddress changes, not the primary handler.
-services.AddHttpClient("AccountService", client => client.BaseAddress = new Uri(realAddress));
+services.AddHttpClient("AccountService", client => client.BaseAddress = new Uri(AccountServiceTestAddress));
 ```
 
 See `CreateFactoriesWithRealNetworking()` and
