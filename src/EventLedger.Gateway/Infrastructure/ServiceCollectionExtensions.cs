@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Polly;
+using Polly.CircuitBreaker;
+using Polly.Retry;
 using Serilog;
 
 namespace EventLedger.Gateway.Infrastructure;
@@ -26,7 +29,30 @@ public static class ServiceCollectionExtensions
         builder.Services.AddDbContext<GatewayDbContext>(opt =>
             opt.UseSqlite(builder.Configuration.GetConnectionString("Gateway")));
         builder.Services.AddHttpClient("AccountService", client =>
-            client.BaseAddress = new Uri(builder.Configuration["AccountService:BaseUrl"]!));
+                client.BaseAddress = new Uri(builder.Configuration["AccountService:BaseUrl"]!))
+            .AddResilienceHandler("account-service", pipeline => pipeline
+                // Strategies wrap in the order added (first-added = outermost). Timeout must be
+                // added LAST (innermost, closest to the actual call) so it applies per attempt —
+                // added before Retry, it would instead be a single total budget for the whole
+                // retry sequence combined, starving retry of the time it needs. Confirmed against
+                // Polly.Core's own docs and empirically (a hung call made exactly 1 attempt before
+                // this fix, not the intended 3).
+                .AddCircuitBreaker(new CircuitBreakerStrategyOptions<HttpResponseMessage>
+                {
+                    FailureRatio = 0.5,
+                    SamplingDuration = TimeSpan.FromSeconds(10),
+                    MinimumThroughput = 4,
+                    BreakDuration = TimeSpan.FromSeconds(5),
+                    ShouldHandle = args => ValueTask.FromResult(IsTransientFailure(args.Outcome))
+                })
+                .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
+                {
+                    MaxRetryAttempts = 2,
+                    Delay = TimeSpan.FromMilliseconds(200),
+                    BackoffType = DelayBackoffType.Constant,
+                    ShouldHandle = args => ValueTask.FromResult(IsTransientFailure(args.Outcome))
+                })
+                .AddTimeout(TimeSpan.FromSeconds(2)));
         builder.Services.AddScoped<EventValidator>();
         builder.Services.AddScoped<SubmitEventHandler>();
         builder.Services.AddScoped<EventQueryHandler>();
@@ -48,4 +74,10 @@ public static class ServiceCollectionExtensions
 
         return app;
     }
+
+    // Shared by both the circuit breaker and retry strategies so "what counts as a failure"
+    // stays consistent between them: a 400 (or any other non-5xx status) is deterministic —
+    // retrying it can't help and it shouldn't count against the circuit's failure ratio either.
+    private static bool IsTransientFailure(Outcome<HttpResponseMessage> outcome) =>
+        outcome.Exception is not null || (outcome.Result is { } response && (int)response.StatusCode >= 500);
 }

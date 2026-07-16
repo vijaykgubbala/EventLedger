@@ -3,6 +3,7 @@ using EventLedger.Gateway.Domain;
 using EventLedger.Gateway.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Polly;
 
 namespace EventLedger.Gateway.Application;
 
@@ -39,9 +40,13 @@ public sealed class SubmitEventHandler(
                 new { eventId, accountId, type = type.ToWireString(), amount },
                 cancellationToken);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or ExecutionRejectedException)
         {
-            logger.LogError(ex, "Account Service unreachable for eventId {EventId}", eventId);
+            // ExecutionRejectedException is the common base for the resilience pipeline's own
+            // rejections — a timed-out attempt (TimeoutRejectedException) or an open circuit
+            // (BrokenCircuitException) — both are "couldn't reach the Account Service" from the
+            // caller's perspective, same as a network-level HttpRequestException.
+            logger.LogWarning(ex, "Account Service unreachable for eventId {EventId}", eventId);
             return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
         }
 
@@ -49,7 +54,7 @@ public sealed class SubmitEventHandler(
         {
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogError(
+                logger.LogWarning(
                     "Account Service returned {StatusCode} for eventId {EventId}", response.StatusCode, eventId);
                 return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
             }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using EventLedger.Gateway.Infrastructure;
@@ -14,7 +15,10 @@ public class EventsControllerTests : IDisposable
 
     public void Dispose() => _fixture.Dispose();
 
-    private WebApplicationFactory<Program> CreateFactory(HttpStatusCode accountServiceStatus = HttpStatusCode.Created) =>
+    private WebApplicationFactory<Program> CreateFactory() =>
+        CreateFactory(new FlakyAccountServiceHandler(failuresBeforeSuccess: 0));
+
+    private WebApplicationFactory<Program> CreateFactory(HttpMessageHandler accountServiceHandler) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
@@ -23,7 +27,7 @@ public class EventsControllerTests : IDisposable
                 services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_fixture.ConnectionString));
 
                 services.AddHttpClient("AccountService")
-                    .ConfigurePrimaryHttpMessageHandler(() => new StubAccountServiceHandler(accountServiceStatus));
+                    .ConfigurePrimaryHttpMessageHandler(() => accountServiceHandler);
             });
         });
 
@@ -134,6 +138,106 @@ public class EventsControllerTests : IDisposable
         Assert.Equal(["evt-earliest", "evt-middle", "evt-later"], body!.Select(e => e.EventId));
     }
 
+    // RES-2: a hung Account Service call is bounded by the resilience pipeline's timeout, not
+    // indefinite. The handler hangs for 30s — far longer than the pipeline could ever take (2s
+    // per-attempt timeout x 3 attempts + 200ms retry delays x 2 ~= 6.4s worst case) — so a
+    // response arriving well under that hang duration proves the timeout, not the hang,
+    // determined it. Asserting CallCount == 3 (not just the elapsed-time bound) is what actually
+    // proves the timeout is applied per attempt, with retry still engaging after each one — a
+    // total-operation timeout wrapping the whole retry sequence (a real bug this test caught: the
+    // timeout was originally registered outer to retry, cutting a hung call off after exactly 1
+    // attempt in ~2s) would also satisfy a loose "< 10s" bound alone.
+    [Fact]
+    public async Task PostEvents_AccountServiceHangs_TimesOutAndReturns503()
+    {
+        var handler = new HangingAccountServiceHandler(TimeSpan.FromSeconds(30));
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        var stopwatch = Stopwatch.StartNew();
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-hang"));
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10),
+            $"Expected the pipeline's timeout to bound the response well under the handler's 30s hang, but it took {stopwatch.Elapsed}.");
+        Assert.Equal(3, handler.CallCount);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("account_service_unavailable", body!.Error);
+    }
+
+    // RES-5: a single transient failure recovers via a small, bounded retry — the caller never
+    // sees it. Asserting CallCount == 2 (not just the final 201) is what actually proves retry
+    // happened, rather than the first call happening to succeed on its own.
+    [Fact]
+    public async Task PostEvents_AccountServiceFailsOnceThenSucceeds_RetryRecoversTransparently()
+    {
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: 1);
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-flaky-recovers"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    // RES-3: sustained failures open the circuit; a subsequent call fails immediately with no
+    // network attempt. The circuit breaker is the OUTERMOST strategy, so it observes one outcome
+    // per POST /events call (after that call's own internal retries are exhausted), not one per
+    // retry attempt — 4 always-failing calls is enough to hit the breaker's minimum throughput (4)
+    // at a 100% failure ratio and trip it open. Asserting the handler's call count doesn't increase
+    // for the next call is what actually proves no network attempt was made, not just that the
+    // response was 503 (which an ordinary failed call would also produce).
+    [Fact]
+    public async Task PostEvents_SustainedFailures_OpensCircuitAndFailsFastWithoutNetworkAttempt()
+    {
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue);
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        await TripCircuitOpenAsync(client, "evt-circuit");
+
+        var callCountBeforeTrip = handler.CallCount;
+
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-circuit-open-check"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(callCountBeforeTrip, handler.CallCount);
+    }
+
+    // RES-4: after the circuit's break duration elapses, it half-opens; a successful trial call
+    // closes it again. Trips the circuit the same way as RES-3, waits past the 5s break duration
+    // (a real wait, per this story's timing-strategy decision), then flips the handler to succeed
+    // before issuing the trial call.
+    [Fact]
+    public async Task PostEvents_CircuitOpensThenCooldownElapses_HalfOpensAndClosesOnSuccess()
+    {
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue);
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        await TripCircuitOpenAsync(client, "evt-cooldown");
+
+        await Task.Delay(TimeSpan.FromSeconds(8)); // past the 5s break duration, with margin for a slow/loaded runner
+
+        handler.FailuresBeforeSuccess = 0; // the half-open trial call, and everything after, succeeds
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-cooldown-trial"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    // Issues enough POST /events calls to exceed the circuit breaker's minimum throughput (4)
+    // at a 100% failure ratio, tripping it open. Shared by RES-3 and RES-4, which both need the
+    // circuit open before exercising what happens next.
+    private static async Task TripCircuitOpenAsync(HttpClient client, string eventIdPrefix)
+    {
+        for (var i = 0; i < 4; i++)
+        {
+            await client.PostAsJsonAsync("/events", ValidPayload($"{eventIdPrefix}-{i}"));
+        }
+    }
+
     private static Task<HttpResponseMessage> PostWithTimestamp(HttpClient client, string eventId, string eventTimestamp) =>
         client.PostAsJsonAsync("/events", new
         {
@@ -145,10 +249,41 @@ public class EventsControllerTests : IDisposable
             eventTimestamp
         });
 
-    private sealed class StubAccountServiceHandler(HttpStatusCode status) : HttpMessageHandler
+    // Simulates a hung Account Service: never returns within any reasonable time on its own —
+    // only the resilience pipeline's timeout (via the CancellationToken passed to Task.Delay)
+    // cuts it short. Used to prove RES-2 (a hung call is bounded, not indefinite).
+    private sealed class HangingAccountServiceHandler(TimeSpan delay) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(status));
+        public int CallCount { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            await Task.Delay(delay, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        }
+    }
+
+    // Fails the first `failuresBeforeSuccess` calls with `failureStatus`, then succeeds on every
+    // call after that. CallCount lets tests assert not just the final response, but whether the
+    // pipeline actually attempted the network call it's expected to (or not, when the circuit is
+    // open) — the assertion that actually proves retry/circuit-breaker behavior, not just its
+    // externally-visible side effect.
+    private sealed class FlakyAccountServiceHandler(int failuresBeforeSuccess, HttpStatusCode failureStatus = HttpStatusCode.InternalServerError) : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+
+        // Mutable (not just constructor-set) so a test can change failure behavior mid-run —
+        // e.g. RES-4 needs this handler to always fail while tripping the circuit open, then
+        // start succeeding for the half-open trial call, without needing a second handler class.
+        public int FailuresBeforeSuccess { get; set; } = failuresBeforeSuccess;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            var status = CallCount <= FailuresBeforeSuccess ? failureStatus : HttpStatusCode.Created;
+            return Task.FromResult(new HttpResponseMessage(status));
+        }
     }
 
     private sealed record EventResponseDto(string EventId, string AccountId, string Type, decimal Amount, string Currency, DateTimeOffset EventTimestamp, object? Metadata, DateTimeOffset ReceivedAt);

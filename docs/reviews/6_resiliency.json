@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "timestamp": "2026-07-16T08:00:00Z",
+    "branch": "6_resiliency",
+    "baseBranch": "master",
+    "commitSha": "acc51b01639c28e1212040ec417874e8f37d34db",
+    "issue": 6,
+    "filesReviewed": [
+      "src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.Gateway/Application/SubmitEventHandler.cs",
+      "src/EventLedger.Gateway/EventLedger.Gateway.csproj",
+      "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs",
+      "architecture/resiliency.md",
+      "docs/brainstorms/6_resiliency-brainstorm.md",
+      "docs/plans/6_resiliency-plan.md",
+      "docs/simplify-patterns.md"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "agent": "review-correctness (independently corroborated by review-dotnet and review-testing)",
+      "severity": "critical",
+      "file": "src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs",
+      "line": 33,
+      "summary": "AddTimeout is chained before AddRetry, making the 2-second timeout a single total budget for the entire retry sequence instead of a per-attempt timeout — contradicting both the architecture doc and RES-5's own acceptance criterion.",
+      "detail": "Three independent review agents converged on this finding, two of them cross-checking it against the actual local NuGet package XML docs/README (Polly.Core.xml: strategies execute 'in the same order they were added to the builder' — first-added is outermost; Microsoft.Extensions.Http.Resilience's own README example and standard-handler order put Timeout innermost, added after Retry, specifically so each attempt gets its own budget). The pipeline as written is `.AddCircuitBreaker(...).AddTimeout(...).AddRetry(...)` — Timeout wraps the whole Retry loop as one call, not the reverse. Concrete impact: a call that takes ~1.8s before returning a transient 500 exhausts nearly the entire 2s window on the first attempt, leaving retry almost no budget — directly contradicting RES-5 ('a single transient failure recovers via a small, bounded retry'). For a genuinely hung call (RES-2), the single attempt is cut off at ~2s with zero retries attempted, not the ~6.4s/3-attempt worst case the architecture doc's 'Configured values' table and the code's own comments claimed. RES-2's test only asserted `stopwatch.Elapsed < TimeSpan.FromSeconds(10)`, which passes identically whether the real per-attempt-timeout-with-retry composition works or is collapsed into a single ~2s budget with no retry — it never actually verified the composition it exists to test. CONFIRMED via direct empirical instrumentation (added a CallCount to HangingAccountServiceHandler, re-ran RES-2): actual result was callCount=1, elapsed=~2.9s — a single attempt, no retry, directly refuting the plan's earlier (unverified) claim that ~6s observed during workflow-execute 6 proved 3-attempt engagement. Fix: reorder to `.AddCircuitBreaker(...).AddRetry(...).AddTimeout(...)` so Timeout is innermost/per-attempt, matching the documented design and Microsoft's own custom-pipeline example.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Reordered the pipeline to .AddCircuitBreaker(...).AddRetry(...).AddTimeout(...) so Timeout is innermost/per-attempt, matching Polly's own documented composition semantics and Microsoft.Extensions.Http.Resilience's standard-handler convention. Strengthened RES-2's test to assert handler.CallCount == 3 (not just the elapsed-time bound, which passed identically before and after the fix) — genuinely proves per-attempt engagement now. Re-verified: RES-2 now observes CallCount=3, ~6-9s elapsed (matches the documented 6.4s worst case); RES-5 (retry recovery) still passes; RES-3/RES-4 (circuit breaker) re-run twice with no new flakiness; full solution suite 82/82 passing; dotnet format clean. Also corrected the plan file's historical RES-2 note, which had recorded the pre-fix ~6s observation as 'confirms genuine pipeline engagement, not a fluke' — an unverified claim that was itself wrong (the pre-fix behavior was actually 1 attempt in ~2.9s; the elapsed-time-only assertion couldn't distinguish the two).",
+        "commit": "8956e22",
+        "issue": null,
+        "timestamp": "2026-07-16T08:20:00Z"
+      }
+    },
+    {
+      "id": "F2",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Application/SubmitEventHandler.cs",
+      "line": 49,
+      "summary": "The widened catch clause still logs at Error level for circuit-open/timeout outcomes, which standards/logging-dotnet.md classifies as an expected, Warning-level condition.",
+      "detail": "standards/logging-dotnet.md's 'What to log' section is explicit: 'Account Service call failures (timeout, circuit open, error response), at Warning level on the Gateway — expected under degraded conditions, not a bug.' The catch block (now also handling ExecutionRejectedException, i.e. timeout/open-circuit) still calls logger.LogError(...) — exactly the anti-pattern the doc warns against ('Reserve Error for genuinely unexpected faults'). Will make an expected degraded-mode response (or a working circuit breaker) alert the same as a real fault. The adjacent non-success-status branch (response.StatusCode check, same file, not touched by this diff) has the same pre-existing issue and should be corrected alongside this one for consistency. Fix: change both to logger.LogWarning.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Changed both the widened catch block's logger.LogError(...) and the adjacent non-success-status branch's logger.LogError(...) to logger.LogWarning(...), matching standards/logging-dotnet.md's classification of Account Service call failures as expected/degraded-mode, not genuinely unexpected faults. Full solution suite 82/82 passing, dotnet format clean.",
+        "commit": "07be0ea",
+        "issue": null,
+        "timestamp": "2026-07-16T08:30:00Z"
+      }
+    },
+    {
+      "id": "F3",
+      "agent": "review-testing",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs",
+      "summary": "RES-3/RES-4 rely on real wall-clock waits (a real 6s sleep past the 5s break duration, plus several sequential real HTTP round-trips to accumulate the circuit breaker's minimum throughput within its 10s sampling window) rather than a virtual clock — a deliberate, documented tradeoff (brainstorm Q1), but on a slow/loaded CI runner there's a real risk of the sampling window or break-duration boundary causing intermittent flakiness.",
+      "detail": "Not a functional gap — this was an explicit, considered tradeoff during brainstorming, not an oversight. Worth a wider margin (e.g. wait 7-8s rather than 6s past a 5s break duration) or a follow-up docs/patterns/ note if this suite is ever observed to flake in CI.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Widened RES-4's post-break-duration wait from 6s to 8s (the circuit breaker's BreakDuration is 5s), giving more margin against scheduling jitter on a slow/loaded runner without reintroducing the fake-TimeProvider complexity the brainstorm already considered and rejected as disproportionate for this story. Re-ran RES-4 individually and as part of the full suite — passes.",
+        "commit": "07be0ea",
+        "issue": null,
+        "timestamp": "2026-07-16T08:30:00Z"
+      }
+    }
+  ],
+  "summary": {
+    "totalFindings": 3,
+    "bySeverity": { "critical": 1, "warning": 1, "suggestion": 1 },
+    "byDisposition": { "pending": 0, "addressed": 3, "ignored": 0, "deferred": 0 }
+  }
+}
