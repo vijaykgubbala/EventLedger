@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using EventLedger.Gateway.Infrastructure;
@@ -24,6 +25,19 @@ public class EventsControllerTests : IDisposable
 
                 services.AddHttpClient("AccountService")
                     .ConfigurePrimaryHttpMessageHandler(() => new StubAccountServiceHandler(accountServiceStatus));
+            });
+        });
+
+    private WebApplicationFactory<Program> CreateFactory(HttpMessageHandler accountServiceHandler) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<DbContextOptions<GatewayDbContext>>();
+                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_fixture.ConnectionString));
+
+                services.AddHttpClient("AccountService")
+                    .ConfigurePrimaryHttpMessageHandler(() => accountServiceHandler);
             });
         });
 
@@ -134,6 +148,28 @@ public class EventsControllerTests : IDisposable
         Assert.Equal(["evt-earliest", "evt-middle", "evt-later"], body!.Select(e => e.EventId));
     }
 
+    // RES-2: a hung Account Service call is bounded by the resilience pipeline's total timeout,
+    // not indefinite. The handler hangs for 30s — far longer than the pipeline could ever take
+    // (2s timeout x up to 3 attempts + 200ms retry delays ~= 6.4s worst case) — so a response
+    // arriving well under that hang duration proves the timeout, not the hang, determined it.
+    [Fact]
+    public async Task PostEvents_AccountServiceHangs_TimesOutAndReturns503()
+    {
+        var handler = new HangingAccountServiceHandler(TimeSpan.FromSeconds(30));
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        var stopwatch = Stopwatch.StartNew();
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-hang"));
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10),
+            $"Expected the pipeline's timeout to bound the response well under the handler's 30s hang, but it took {stopwatch.Elapsed}.");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("account_service_unavailable", body!.Error);
+    }
+
     private static Task<HttpResponseMessage> PostWithTimestamp(HttpClient client, string eventId, string eventTimestamp) =>
         client.PostAsJsonAsync("/events", new
         {
@@ -149,6 +185,35 @@ public class EventsControllerTests : IDisposable
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(status));
+    }
+
+    // Simulates a hung Account Service: never returns within any reasonable time on its own —
+    // only the resilience pipeline's timeout (via the CancellationToken passed to Task.Delay)
+    // cuts it short. Used to prove RES-2 (a hung call is bounded, not indefinite).
+    private sealed class HangingAccountServiceHandler(TimeSpan delay) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(delay, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        }
+    }
+
+    // Fails the first `failuresBeforeSuccess` calls with `failureStatus`, then succeeds on every
+    // call after that. CallCount lets tests assert not just the final response, but whether the
+    // pipeline actually attempted the network call it's expected to (or not, when the circuit is
+    // open) — the assertion that actually proves retry/circuit-breaker behavior, not just its
+    // externally-visible side effect.
+    private sealed class FlakyAccountServiceHandler(int failuresBeforeSuccess, HttpStatusCode failureStatus = HttpStatusCode.InternalServerError) : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            var status = CallCount <= failuresBeforeSuccess ? failureStatus : HttpStatusCode.Created;
+            return Task.FromResult(new HttpResponseMessage(status));
+        }
     }
 
     private sealed record EventResponseDto(string EventId, string AccountId, string Type, decimal Amount, string Currency, DateTimeOffset EventTimestamp, object? Metadata, DateTimeOffset ReceivedAt);
