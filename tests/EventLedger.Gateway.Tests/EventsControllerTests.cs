@@ -15,18 +15,8 @@ public class EventsControllerTests : IDisposable
 
     public void Dispose() => _fixture.Dispose();
 
-    private WebApplicationFactory<Program> CreateFactory(HttpStatusCode accountServiceStatus = HttpStatusCode.Created) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<DbContextOptions<GatewayDbContext>>();
-                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_fixture.ConnectionString));
-
-                services.AddHttpClient("AccountService")
-                    .ConfigurePrimaryHttpMessageHandler(() => new StubAccountServiceHandler(accountServiceStatus));
-            });
-        });
+    private WebApplicationFactory<Program> CreateFactory() =>
+        CreateFactory(new FlakyAccountServiceHandler(failuresBeforeSuccess: 0));
 
     private WebApplicationFactory<Program> CreateFactory(HttpMessageHandler accountServiceHandler) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -200,10 +190,7 @@ public class EventsControllerTests : IDisposable
         using var factory = CreateFactory(handler);
         using var client = factory.CreateClient();
 
-        for (var i = 0; i < 4; i++)
-        {
-            await client.PostAsJsonAsync("/events", ValidPayload($"evt-circuit-{i}"));
-        }
+        await TripCircuitOpenAsync(client, "evt-circuit");
 
         var callCountBeforeTrip = handler.CallCount;
 
@@ -224,10 +211,7 @@ public class EventsControllerTests : IDisposable
         using var factory = CreateFactory(handler);
         using var client = factory.CreateClient();
 
-        for (var i = 0; i < 4; i++)
-        {
-            await client.PostAsJsonAsync("/events", ValidPayload($"evt-cooldown-{i}"));
-        }
+        await TripCircuitOpenAsync(client, "evt-cooldown");
 
         await Task.Delay(TimeSpan.FromSeconds(6)); // past the 5s break duration
 
@@ -235,6 +219,17 @@ public class EventsControllerTests : IDisposable
         var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-cooldown-trial"));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    // Issues enough POST /events calls to exceed the circuit breaker's minimum throughput (4)
+    // at a 100% failure ratio, tripping it open. Shared by RES-3 and RES-4, which both need the
+    // circuit open before exercising what happens next.
+    private static async Task TripCircuitOpenAsync(HttpClient client, string eventIdPrefix)
+    {
+        for (var i = 0; i < 4; i++)
+        {
+            await client.PostAsJsonAsync("/events", ValidPayload($"{eventIdPrefix}-{i}"));
+        }
     }
 
     private static Task<HttpResponseMessage> PostWithTimestamp(HttpClient client, string eventId, string eventTimestamp) =>
@@ -247,12 +242,6 @@ public class EventsControllerTests : IDisposable
             currency = "USD",
             eventTimestamp
         });
-
-    private sealed class StubAccountServiceHandler(HttpStatusCode status) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(status));
-    }
 
     // Simulates a hung Account Service: never returns within any reasonable time on its own —
     // only the resilience pipeline's timeout (via the CancellationToken passed to Task.Delay)
