@@ -95,18 +95,32 @@ fix here.
 
 ### Phase 4: Manual verification (documented, not automated)
 
-- [ ] Run `docker compose up --build` locally. Confirm both containers
+- [x] Run `docker compose up --build` locally. Confirm both containers
   reach a healthy state with no manual intervention (`docker compose ps`
   shows both as `healthy`).
-- [ ] `curl http://localhost:5099/health` and
+  - `docker compose ps` output: both `eventledger-account-service-1` and
+    `eventledger-gateway-1` show `Up ... (healthy)`. Compose's own build
+    log shows `Container eventledger-account-service-1 Healthy` logged
+    *before* `Container eventledger-gateway-1 Starting` — direct proof
+    `depends_on: condition: service_healthy` gated the Gateway's startup
+    as designed, not just that both happened to end up healthy.
+- [x] `curl http://localhost:5099/health` and
   `curl http://localhost:5199/health` — confirm both return `200`.
-- [ ] `curl -X POST http://localhost:5099/events` with a valid payload,
+  - Both returned `HTTP 200` with body `{"status":"ok","database":"ok"}`.
+- [x] `curl -X POST http://localhost:5099/events` with a valid payload,
   then `curl http://localhost:5099/events/{eventId}` — confirm the
   full flow works end-to-end through both containers (proves the
   `AccountService__BaseUrl` override actually resolves and the two
   containers can reach each other over the Compose network).
-- [ ] `docker compose down` — confirm clean teardown.
-- [ ] Record the exact commands run and their output in the handoff's
+  - `POST /events` (eventId `evt-compose-smoke-1`) → `201 Created`.
+  - `GET /events/evt-compose-smoke-1` → `200`, record matches.
+  - `GET /accounts/acct-compose-smoke-1/balance` → `200`,
+    `{"accountId":"acct-compose-smoke-1","balance":250.0}` — also proves
+    the new (issue #7) balance-passthrough endpoint works through Compose.
+- [x] `docker compose down` — confirm clean teardown.
+  - Both containers and the `eventledger_default` network stopped,
+    removed cleanly; no errors.
+- [x] Record the exact commands run and their output in the handoff's
   Test Coverage section (this story has no `docs/plans/*-plan.md`
   Testing Strategy test-case table in the usual xUnit sense — see below).
 
