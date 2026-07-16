@@ -116,11 +116,12 @@ dependency, exercised indirectly by every later phase's tests.
 
 ### Phase 6: Account Service — Controllers
 
-- [ ] Test: `POST /accounts/{accountId}/transactions` with a valid payload → `201` with the record (FB-9) (integration, Phase 6)
-- [ ] Test: `POST /accounts/{accountId}/transactions` with a duplicate `eventId` → `200` with the original (ID-3) (integration, Phase 6)
-- [ ] Test: `GET /accounts/{accountId}/balance` → `200` with the computed balance (FB-10) (integration, Phase 6)
-- [ ] Test: `GET /accounts/{accountId}` → `200` with `accountId` + transaction list (FB-11) (integration, Phase 6)
-- [ ] Implement: `src/EventLedger.AccountService/Controllers/AccountsController.cs` — `POST /accounts/{accountId}/transactions`, `GET /accounts/{accountId}/balance`, `GET /accounts/{accountId}`
+- [x] Test: `POST /accounts/{accountId}/transactions` with a valid payload → `201` with the record (FB-9) (integration, Phase 6)
+- [x] Test: `POST /accounts/{accountId}/transactions` with a duplicate `eventId` → `200` with the original (ID-3) (integration, Phase 6)
+- [x] Test: `GET /accounts/{accountId}/balance` → `200` with the computed balance (FB-10) (integration, Phase 6)
+- [x] Test: `GET /accounts/{accountId}` → `200` with `accountId` + transaction list (FB-11) (integration, Phase 6)
+- [x] Implement: `src/EventLedger.AccountService/Controllers/AccountsController.cs` — `POST /accounts/{accountId}/transactions`, `GET /accounts/{accountId}/balance`, `GET /accounts/{accountId}`. No separate request-validation layer here — `type`/`amount` correctness is enforced by the Gateway before this endpoint is ever reached, with the DB `CHECK` constraint as the sole backstop, per [standards/api.md](../../standards/api.md#anti-patterns-to-avoid) ("do not validate `amount`/`type` differently between the Gateway and the Account Service"). **Clarification on `404`**: [standards/api.md](../../standards/api.md)'s status table lists `404` for `GET /accounts/{id}` and `GET /accounts/{id}/balance`, but since an account is an implicit identity with no stored `accounts` table ([standards/naming.md](../../standards/naming.md)), there is no way to distinguish "account never existed" from "account exists with zero transactions" — and Phase 3 already established that zero transactions returns `200` with balance `0`, not an error. Both endpoints therefore always return `200` for any syntactically valid `accountId`; no `404` path exists or is tested for them.
+- [x] **Addition — the one required full-flow integration test** ([standards/backend-architecture.md](../../standards/backend-architecture.md#test-project-layout)): `tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs` wires a real, in-process `WebApplicationFactory<AccountService.Program>` behind the Gateway's `"AccountService"` named `HttpClient` (via `TestServer.CreateHandler()`) and drives `POST /events` through both services for real, asserting the transaction lands in the Account Service's own database and the event lands in the Gateway's. Required a `ProjectReference` from `EventLedger.Gateway.Tests` to `EventLedger.AccountService` with `<Aliases>AccountServiceAssembly</Aliases>`, since both services' `Program` marker classes are unnamespaced globals with the identical name — resolved with a C# `extern alias`. This fulfills the promise made in Phase 4's test-strategy note (stub-handler tests were an intentional stand-in until both services' Controllers existed).
 
 ## Testing Strategy
 

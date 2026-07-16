@@ -23,6 +23,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\EventLedger.Gateway\EventLedger.Gateway.csproj" />
+    <ProjectReference Include="..\..\src\EventLedger.AccountService\EventLedger.AccountService.csproj">
+      <Aliases>AccountServiceAssembly</Aliases>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>
