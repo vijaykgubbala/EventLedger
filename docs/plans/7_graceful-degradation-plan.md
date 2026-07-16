@@ -169,7 +169,7 @@ crash-then-retry idempotency guarantee ("Verified" acceptance item).
 
 ### Phase 5: Docs
 
-- [ ] Update `architecture/gateway-architecture.md`: add a
+- [x] Update `architecture/gateway-architecture.md`: add a
   `GET /accounts/{accountId}/balance` row to the endpoint table (lines
   24–31), matching the behavior already described in the Responsibilities
   section (lines 20–21) — closes the pre-existing doc gap noted above.

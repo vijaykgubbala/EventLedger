@@ -28,6 +28,7 @@ for the concrete project layout.
 | `POST` | `/events` | Yes (synchronously, in the request path) | Only persists after confirmed success; see below |
 | `GET` | `/events/{id}` | No | Local read only |
 | `GET` | `/events?account={accountId}` | No | Local read only, ordered by `eventTimestamp` |
+| `GET` | `/accounts/{accountId}/balance` | Yes (synchronously, in the request path) | Bare passthrough of the Account Service's response body; `503` if unreachable — see [resiliency.md](resiliency.md#graceful-degradation) |
 | `GET` | `/health` | No (reports Account Service reachability as a diagnostic, does not block on it) | See [observability.md](observability.md) |
 
 Request/response shapes and status codes are defined in
