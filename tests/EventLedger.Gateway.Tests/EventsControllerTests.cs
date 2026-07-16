@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using EventLedger.Gateway.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -11,16 +10,9 @@ namespace EventLedger.Gateway.Tests;
 
 public class EventsControllerTests : IDisposable
 {
-    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"events-controller-test-{Guid.NewGuid():N}.db");
+    private readonly SqliteTempDbFixture _fixture = new();
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _fixture.Dispose();
 
     private WebApplicationFactory<Program> CreateFactory(HttpStatusCode accountServiceStatus = HttpStatusCode.Created) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -28,7 +20,7 @@ public class EventsControllerTests : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<DbContextOptions<GatewayDbContext>>();
-                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite($"Data Source={_dbPath}"));
+                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_fixture.ConnectionString));
 
                 services.AddHttpClient("AccountService")
                     .ConfigurePrimaryHttpMessageHandler(() => new StubAccountServiceHandler(accountServiceStatus));

@@ -1,7 +1,6 @@
 using EventLedger.AccountService.Application;
 using EventLedger.AccountService.Domain;
 using EventLedger.AccountService.Infrastructure;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -9,31 +8,17 @@ namespace EventLedger.AccountService.Tests;
 
 public class ApplyTransactionHandlerTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTempDbFixture _fixture = new();
 
     public ApplyTransactionHandlerTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"apply-txn-test-{Guid.NewGuid():N}.db");
-        using var db = CreateContext();
+        using var db = _fixture.CreateContext();
         db.Database.EnsureCreated();
     }
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _fixture.Dispose();
 
-    private AccountDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<AccountDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
-            .Options;
-        return new AccountDbContext(options);
-    }
+    private AccountDbContext CreateContext() => _fixture.CreateContext();
 
     private static ApplyTransactionHandler CreateHandler(AccountDbContext db) =>
         new(db, NullLogger<ApplyTransactionHandler>.Instance);

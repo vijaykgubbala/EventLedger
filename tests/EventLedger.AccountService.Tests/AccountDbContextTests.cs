@@ -1,33 +1,24 @@
 using EventLedger.AccountService.Domain;
 using EventLedger.AccountService.Infrastructure;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventLedger.AccountService.Tests;
 
 public class AccountDbContextTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTempDbFixture _fixture = new();
     private readonly AccountDbContext _db;
 
     public AccountDbContextTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"account-test-{Guid.NewGuid():N}.db");
-        var options = new DbContextOptionsBuilder<AccountDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
-            .Options;
-        _db = new AccountDbContext(options);
+        _db = _fixture.CreateContext();
         _db.Database.EnsureCreated();
     }
 
     public void Dispose()
     {
         _db.Dispose();
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
+        _fixture.Dispose();
     }
 
     private static TransactionRecord NewTransaction(string eventId, decimal amount = 100m) => new()

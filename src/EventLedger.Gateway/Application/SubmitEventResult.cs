@@ -6,7 +6,8 @@ public enum SubmitEventOutcome
 {
     Created,
     Duplicate,
-    AccountServiceUnavailable
+    AccountServiceUnavailable,
+    Fault
 }
 
 public sealed record SubmitEventResult(SubmitEventOutcome Outcome, EventRecord? Event);

@@ -39,6 +39,9 @@ public class EventsController(
             SubmitEventOutcome.AccountServiceUnavailable => StatusCode(
                 StatusCodes.Status503ServiceUnavailable,
                 new { error = "account_service_unavailable", message = "The Account Service is currently unavailable." }),
+            SubmitEventOutcome.Fault => StatusCode(
+                StatusCodes.Status500InternalServerError,
+                new { error = "internal_error", message = "The event could not be recorded." }),
             _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}")
         };
     }

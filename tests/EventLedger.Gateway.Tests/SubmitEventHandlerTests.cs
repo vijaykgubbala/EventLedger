@@ -2,39 +2,24 @@ using System.Net;
 using EventLedger.Gateway.Application;
 using EventLedger.Gateway.Domain;
 using EventLedger.Gateway.Infrastructure;
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EventLedger.Gateway.Tests;
 
 public class SubmitEventHandlerTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTempDbFixture _fixture = new();
 
     public SubmitEventHandlerTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"submit-event-test-{Guid.NewGuid():N}.db");
-        using var db = CreateContext();
+        using var db = _fixture.CreateContext();
         db.Database.EnsureCreated();
     }
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _fixture.Dispose();
 
-    private GatewayDbContext CreateContext()
-    {
-        var options = new DbContextOptionsBuilder<GatewayDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
-            .Options;
-        return new GatewayDbContext(options);
-    }
+    private GatewayDbContext CreateContext() => _fixture.CreateContext();
 
     private static SubmitEventHandler CreateHandler(GatewayDbContext db, HttpStatusCode accountServiceStatus = HttpStatusCode.Created) =>
         new(db, new StubHttpClientFactory(accountServiceStatus), NullLogger<SubmitEventHandler>.Instance);
@@ -133,6 +118,17 @@ public class SubmitEventHandlerTests : IDisposable
 
         Assert.Equal(SubmitEventOutcome.AccountServiceUnavailable, result.Outcome);
         Assert.Equal(0, await db.Events.CountAsync());
+    }
+
+    [Fact]
+    public async Task SubmitAsync_CheckConstraintViolation_ReturnsFault()
+    {
+        using var db = CreateContext();
+        var handler = CreateHandler(db);
+
+        var result = await handler.SubmitAsync("evt-7", "acct-1", TransactionType.Credit, 0m, "USD", Timestamp, null);
+
+        Assert.Equal(SubmitEventOutcome.Fault, result.Outcome);
     }
 
     private sealed class StubHttpClientFactory : IHttpClientFactory

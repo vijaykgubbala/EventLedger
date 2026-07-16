@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using EventLedger.AccountService.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -11,16 +10,9 @@ namespace EventLedger.AccountService.Tests;
 
 public class AccountsControllerTests : IDisposable
 {
-    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"accounts-controller-test-{Guid.NewGuid():N}.db");
+    private readonly SqliteTempDbFixture _fixture = new();
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _fixture.Dispose();
 
     private WebApplicationFactory<Program> CreateFactory() =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -28,7 +20,7 @@ public class AccountsControllerTests : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<DbContextOptions<AccountDbContext>>();
-                services.AddDbContext<AccountDbContext>(opt => opt.UseSqlite($"Data Source={_dbPath}"));
+                services.AddDbContext<AccountDbContext>(opt => opt.UseSqlite(_fixture.ConnectionString));
             });
         });
 

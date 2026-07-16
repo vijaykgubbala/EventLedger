@@ -79,6 +79,11 @@ public sealed class SubmitEventHandler(
             WarnIfMismatched(winner, type, amount, currency, eventTimestamp);
             return new SubmitEventResult(SubmitEventOutcome.Duplicate, winner);
         }
+        catch (DbUpdateException ex)
+        {
+            logger.LogError(ex, "Failed to insert event for eventId {EventId}: constraint violation", eventId);
+            return new SubmitEventResult(SubmitEventOutcome.Fault, null);
+        }
     }
 
     private void WarnIfMismatched(EventRecord stored, TransactionType type, decimal amount, string currency, DateTimeOffset eventTimestamp)

@@ -15,18 +15,19 @@ namespace EventLedger.Gateway.Tests;
 
 public class GatewayToAccountServiceFullFlowTests : IDisposable
 {
-    private readonly string _gatewayDbPath = Path.Combine(Path.GetTempPath(), $"gateway-e2e-{Guid.NewGuid():N}.db");
+    // AccountService.Tests' SqliteTempDbFixture lives in a different test assembly than this
+    // project's src-only extern alias covers, so the Account Service side of this one-off
+    // dual-service test keeps its own minimal temp-file handling rather than reusing it.
+    private readonly SqliteTempDbFixture _gatewayFixture = new();
     private readonly string _accountDbPath = Path.Combine(Path.GetTempPath(), $"account-e2e-{Guid.NewGuid():N}.db");
 
     public void Dispose()
     {
+        _gatewayFixture.Dispose();
         SqliteConnection.ClearAllPools();
-        foreach (var path in new[] { _gatewayDbPath, _accountDbPath })
+        if (File.Exists(_accountDbPath))
         {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
+            File.Delete(_accountDbPath);
         }
     }
 
@@ -47,7 +48,7 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<DbContextOptions<GatewayDbContext>>();
-                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite($"Data Source={_gatewayDbPath}"));
+                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_gatewayFixture.ConnectionString));
 
                 services.AddHttpClient("AccountService")
                     .ConfigurePrimaryHttpMessageHandler(() => accountServiceFactory.Server.CreateHandler());

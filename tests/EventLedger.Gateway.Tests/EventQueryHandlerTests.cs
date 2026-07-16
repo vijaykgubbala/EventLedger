@@ -1,34 +1,24 @@
 using EventLedger.Gateway.Application;
 using EventLedger.Gateway.Domain;
 using EventLedger.Gateway.Infrastructure;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 
 namespace EventLedger.Gateway.Tests;
 
 public class EventQueryHandlerTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTempDbFixture _fixture = new();
     private readonly GatewayDbContext _db;
 
     public EventQueryHandlerTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"event-query-test-{Guid.NewGuid():N}.db");
-        var options = new DbContextOptionsBuilder<GatewayDbContext>()
-            .UseSqlite($"Data Source={_dbPath}")
-            .Options;
-        _db = new GatewayDbContext(options);
+        _db = _fixture.CreateContext();
         _db.Database.EnsureCreated();
     }
 
     public void Dispose()
     {
         _db.Dispose();
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
+        _fixture.Dispose();
     }
 
     private static EventRecord NewEvent(string eventId, string accountId, DateTimeOffset eventTimestamp) => new()
