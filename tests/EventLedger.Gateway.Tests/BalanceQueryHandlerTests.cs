@@ -1,6 +1,7 @@
 using System.Net;
 using EventLedger.Gateway.Application;
 using Microsoft.Extensions.Logging.Abstractions;
+using Polly.Timeout;
 
 namespace EventLedger.Gateway.Tests;
 
@@ -25,6 +26,21 @@ public class BalanceQueryHandlerTests
     public async Task GetBalanceAsync_AccountServiceUnreachable_ReturnsUnavailable()
     {
         var handler = CreateHandler(new ThrowingHandler());
+
+        var result = await handler.GetBalanceAsync("acct-1");
+
+        Assert.Equal(BalanceQueryOutcome.AccountServiceUnavailable, result.Outcome);
+        Assert.Null(result.Body);
+    }
+
+    // The catch clause handles two distinct exception types (HttpRequestException, a genuine
+    // network/transport failure, and ExecutionRejectedException, the resilience pipeline's own
+    // rejection when a timeout or open circuit stops the call before it reaches the network) —
+    // this exercises the second branch, which the HttpRequestException-only test above does not.
+    [Fact]
+    public async Task GetBalanceAsync_ResiliencePipelineRejectsCall_ReturnsUnavailable()
+    {
+        var handler = CreateHandler(new RejectingHandler());
 
         var result = await handler.GetBalanceAsync("acct-1");
 
@@ -81,5 +97,11 @@ public class BalanceQueryHandlerTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             throw new HttpRequestException("simulated: Account Service unreachable");
+    }
+
+    private sealed class RejectingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new TimeoutRejectedException("simulated: resilience pipeline rejected the call");
     }
 }
