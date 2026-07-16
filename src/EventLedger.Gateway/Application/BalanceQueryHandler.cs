@@ -10,7 +10,7 @@ public sealed class BalanceQueryHandler(IHttpClientFactory httpClientFactory)
         HttpResponseMessage response;
         try
         {
-            response = await client.GetAsync($"/accounts/{accountId}/balance", cancellationToken);
+            response = await client.GetAsync($"/accounts/{Uri.EscapeDataString(accountId)}/balance", cancellationToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or ExecutionRejectedException)
         {
