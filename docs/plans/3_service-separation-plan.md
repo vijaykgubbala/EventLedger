@@ -25,7 +25,7 @@ disagreement — see Decisions Made item 2 and Known Constraints below.
 
 - [x] `dotnet new web -o src/EventLedger.Gateway` (minimal template — no generated controllers/Swagger to clean up)
 - [x] `dotnet new web -o src/EventLedger.AccountService`
-- [ ] `builder.Services.AddControllers()` in each `Program.cs` (MVC controller support is part of the shared ASP.NET Core framework, no extra package) — deferred to Phase 2's `Program.cs` rewrite
+- [x] `builder.Services.AddControllers()` in each `Program.cs` (MVC controller support is part of the shared ASP.NET Core framework, no extra package) — landed as part of Phase 2's `Program.cs` rewrite
 - [x] Create `EventLedger.sln` at repo root; add both projects
 - [x] Create `Controllers/`, `Application/`, `Domain/`, `Infrastructure/`, `Middleware/` folders in each service per [standards/backend-architecture.md](../../standards/backend-architecture.md)
 - [x] `dotnet new xunit -o tests/EventLedger.Gateway.Tests`; add `Microsoft.AspNetCore.Mvc.Testing` package; project reference to `EventLedger.Gateway`
