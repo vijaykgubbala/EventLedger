@@ -81,18 +81,18 @@ follows one coherent story rather than disconnected throwaway examples).
 
 ### Phase 4: Service Separation, Distributed Tracing, Observability sections
 
-- [ ] Service Separation: brief narrative (not a curl demo — this is a
+- [x] Service Separation: brief narrative (not a curl demo — this is a
   structural property, not runtime behavior) pointing to
   `docker-compose.yml`'s two independent `build:` contexts and
   `architecture/vertical-architecture.md`'s "no shared database" decision.
-- [ ] Distributed Tracing: `POST /events`, capture the response, then
+- [x] Distributed Tracing: `POST /events`, capture the response, then
   `docker compose logs gateway` and `docker compose logs account-service`,
   grep both for the same trace ID. Confirm live the exact `jq`/`grep`
   command needed given `JsonFormatter` nests custom `LogContext`
   properties (including `TraceId`) under a `Properties` object, not at
   the top level — the brainstorm flagged this as needing a live check
   before finalizing the exact command syntax.
-- [ ] Observability: cross-reference README's `/health` curl (already
+- [x] Observability: cross-reference README's `/health` curl (already
   documented, don't repeat) for the structured-logging and health-check
   halves of this requirement. For the custom-metric half: state plainly
   that the metric (a request-count `Counter`) is recorded in-process but
