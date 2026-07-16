@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 namespace EventLedger.Gateway.Infrastructure;
@@ -17,7 +18,17 @@ public static class ServiceCollectionExtensions
     {
         builder.Host.UseSerilog();
         builder.Services.AddControllers();
+        builder.Services.AddDbContext<GatewayDbContext>(opt =>
+            opt.UseSqlite(builder.Configuration.GetConnectionString("Gateway")));
 
         return builder;
+    }
+
+    public static WebApplication EnsureGatewayDatabaseCreated(this WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<GatewayDbContext>().Database.EnsureCreated();
+
+        return app;
     }
 }
