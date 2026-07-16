@@ -31,6 +31,12 @@ public static class ServiceCollectionExtensions
         builder.Services.AddHttpClient("AccountService", client =>
                 client.BaseAddress = new Uri(builder.Configuration["AccountService:BaseUrl"]!))
             .AddResilienceHandler("account-service", pipeline => pipeline
+                // Strategies wrap in the order added (first-added = outermost). Timeout must be
+                // added LAST (innermost, closest to the actual call) so it applies per attempt —
+                // added before Retry, it would instead be a single total budget for the whole
+                // retry sequence combined, starving retry of the time it needs. Confirmed against
+                // Polly.Core's own docs and empirically (a hung call made exactly 1 attempt before
+                // this fix, not the intended 3).
                 .AddCircuitBreaker(new CircuitBreakerStrategyOptions<HttpResponseMessage>
                 {
                     FailureRatio = 0.5,
@@ -39,14 +45,14 @@ public static class ServiceCollectionExtensions
                     BreakDuration = TimeSpan.FromSeconds(5),
                     ShouldHandle = args => ValueTask.FromResult(IsTransientFailure(args.Outcome))
                 })
-                .AddTimeout(TimeSpan.FromSeconds(2))
                 .AddRetry(new RetryStrategyOptions<HttpResponseMessage>
                 {
                     MaxRetryAttempts = 2,
                     Delay = TimeSpan.FromMilliseconds(200),
                     BackoffType = DelayBackoffType.Constant,
                     ShouldHandle = args => ValueTask.FromResult(IsTransientFailure(args.Outcome))
-                }));
+                })
+                .AddTimeout(TimeSpan.FromSeconds(2)));
         builder.Services.AddScoped<EventValidator>();
         builder.Services.AddScoped<SubmitEventHandler>();
         builder.Services.AddScoped<EventQueryHandler>();

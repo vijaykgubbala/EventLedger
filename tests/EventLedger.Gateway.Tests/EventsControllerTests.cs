@@ -138,10 +138,15 @@ public class EventsControllerTests : IDisposable
         Assert.Equal(["evt-earliest", "evt-middle", "evt-later"], body!.Select(e => e.EventId));
     }
 
-    // RES-2: a hung Account Service call is bounded by the resilience pipeline's total timeout,
-    // not indefinite. The handler hangs for 30s — far longer than the pipeline could ever take
-    // (2s timeout x up to 3 attempts + 200ms retry delays ~= 6.4s worst case) — so a response
-    // arriving well under that hang duration proves the timeout, not the hang, determined it.
+    // RES-2: a hung Account Service call is bounded by the resilience pipeline's timeout, not
+    // indefinite. The handler hangs for 30s — far longer than the pipeline could ever take (2s
+    // per-attempt timeout x 3 attempts + 200ms retry delays x 2 ~= 6.4s worst case) — so a
+    // response arriving well under that hang duration proves the timeout, not the hang,
+    // determined it. Asserting CallCount == 3 (not just the elapsed-time bound) is what actually
+    // proves the timeout is applied per attempt, with retry still engaging after each one — a
+    // total-operation timeout wrapping the whole retry sequence (a real bug this test caught: the
+    // timeout was originally registered outer to retry, cutting a hung call off after exactly 1
+    // attempt in ~2s) would also satisfy a loose "< 10s" bound alone.
     [Fact]
     public async Task PostEvents_AccountServiceHangs_TimesOutAndReturns503()
     {
@@ -155,6 +160,7 @@ public class EventsControllerTests : IDisposable
 
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10),
             $"Expected the pipeline's timeout to bound the response well under the handler's 30s hang, but it took {stopwatch.Elapsed}.");
+        Assert.Equal(3, handler.CallCount);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
         Assert.Equal("account_service_unavailable", body!.Error);
@@ -248,8 +254,11 @@ public class EventsControllerTests : IDisposable
     // cuts it short. Used to prove RES-2 (a hung call is bounded, not indefinite).
     private sealed class HangingAccountServiceHandler(TimeSpan delay) : HttpMessageHandler
     {
+        public int CallCount { get; private set; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            CallCount++;
             await Task.Delay(delay, cancellationToken);
             return new HttpResponseMessage(HttpStatusCode.Created);
         }
