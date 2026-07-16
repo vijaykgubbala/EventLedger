@@ -170,6 +170,73 @@ public class EventsControllerTests : IDisposable
         Assert.Equal("account_service_unavailable", body!.Error);
     }
 
+    // RES-5: a single transient failure recovers via a small, bounded retry — the caller never
+    // sees it. Asserting CallCount == 2 (not just the final 201) is what actually proves retry
+    // happened, rather than the first call happening to succeed on its own.
+    [Fact]
+    public async Task PostEvents_AccountServiceFailsOnceThenSucceeds_RetryRecoversTransparently()
+    {
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: 1);
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-flaky-recovers"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    // RES-3: sustained failures open the circuit; a subsequent call fails immediately with no
+    // network attempt. The circuit breaker is the OUTERMOST strategy, so it observes one outcome
+    // per POST /events call (after that call's own internal retries are exhausted), not one per
+    // retry attempt — 4 always-failing calls is enough to hit the breaker's minimum throughput (4)
+    // at a 100% failure ratio and trip it open. Asserting the handler's call count doesn't increase
+    // for the next call is what actually proves no network attempt was made, not just that the
+    // response was 503 (which an ordinary failed call would also produce).
+    [Fact]
+    public async Task PostEvents_SustainedFailures_OpensCircuitAndFailsFastWithoutNetworkAttempt()
+    {
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue);
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < 4; i++)
+        {
+            await client.PostAsJsonAsync("/events", ValidPayload($"evt-circuit-{i}"));
+        }
+
+        var callCountBeforeTrip = handler.CallCount;
+
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-circuit-open-check"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(callCountBeforeTrip, handler.CallCount);
+    }
+
+    // RES-4: after the circuit's break duration elapses, it half-opens; a successful trial call
+    // closes it again. Trips the circuit the same way as RES-3, waits past the 5s break duration
+    // (a real wait, per this story's timing-strategy decision), then flips the handler to succeed
+    // before issuing the trial call.
+    [Fact]
+    public async Task PostEvents_CircuitOpensThenCooldownElapses_HalfOpensAndClosesOnSuccess()
+    {
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue);
+        using var factory = CreateFactory(handler);
+        using var client = factory.CreateClient();
+
+        for (var i = 0; i < 4; i++)
+        {
+            await client.PostAsJsonAsync("/events", ValidPayload($"evt-cooldown-{i}"));
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(6)); // past the 5s break duration
+
+        handler.FailuresBeforeSuccess = 0; // the half-open trial call, and everything after, succeeds
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-cooldown-trial"));
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
     private static Task<HttpResponseMessage> PostWithTimestamp(HttpClient client, string eventId, string eventTimestamp) =>
         client.PostAsJsonAsync("/events", new
         {
@@ -208,10 +275,15 @@ public class EventsControllerTests : IDisposable
     {
         public int CallCount { get; private set; }
 
+        // Mutable (not just constructor-set) so a test can change failure behavior mid-run —
+        // e.g. RES-4 needs this handler to always fail while tripping the circuit open, then
+        // start succeeding for the half-open trial call, without needing a second handler class.
+        public int FailuresBeforeSuccess { get; set; } = failuresBeforeSuccess;
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             CallCount++;
-            var status = CallCount <= failuresBeforeSuccess ? failureStatus : HttpStatusCode.Created;
+            var status = CallCount <= FailuresBeforeSuccess ? failureStatus : HttpStatusCode.Created;
             return Task.FromResult(new HttpResponseMessage(status));
         }
     }
