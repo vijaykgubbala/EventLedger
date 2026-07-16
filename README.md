@@ -192,3 +192,8 @@ item:
 
 Full checklist definition:
 [.claude/agents/review-testing.md](.claude/agents/review-testing.md).
+
+For a manual, hands-on walkthrough of these same requirements against a
+live Docker deployment — with concrete `curl` commands and real test
+data — see
+[docs/verification-guide.md](docs/verification-guide.md).
