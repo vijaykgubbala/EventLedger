@@ -181,12 +181,12 @@ item:
 
 | # | Requirement | Covered by |
 |---|---|---|
-| 1 | Idempotency (real SQLite) | `SubmitEventHandlerTests.SubmitAsync_EventIdAlreadyStoredLocally_ReturnsExistingRecordAccountServiceNotCalled`, `SubmitAsync_ResubmittedWithDifferentPayload_ReturnsOriginalUnchanged`, `SubmitAsync_ConcurrentCallsSameNewEventId_ExactlyOneRowLoserGetsWinnersRecord`; `GatewayToAccountServiceFullFlowTests.PostEvents_AccountServiceAlreadyConfirmedBeforeGatewayCrash_RetrySucceedsWithoutDoubleApplying` |
-| 2 | Out-of-order handling | `EventsControllerTests.GetEventsByAccount_ReturnsArrayOrderedAscendingByEventTimestamp`; `GatewayToAccountServiceFullFlowTests.PostEvents_MixedTransactionsSubmittedOutOfEventTimestampOrder_ResultingBalanceIsCorrect` |
-| 3 | Balance computation incl. zero-transaction edge case | `BalanceQueryHandlerTests.GetBalanceAsync_NoTransactionsForAccount_ReturnsZero`, `_MixedCreditsAndDebits_ReturnsSumOfCreditsMinusSumOfDebits`, `_AllCredits_ReturnsSumOfCredits`, `_AllDebits_ReturnsNegativeSumOfDebits` (Account Service) |
-| 4 | Validation, each rejection case | `EventValidatorTests.Validate_EachRequiredFieldMissingIndividually_FailureNamesThatField`, `Validate_AmountNotGreaterThanZero_Fails`, `Validate_TypeNotExactlyCreditOrDebit_Fails`, `Validate_MalformedEventTimestamp_Fails`; HTTP-level equivalents in `EventsControllerTests.cs` |
-| 5 | Resiliency (circuit breaker + `503`) | `EventsControllerTests.PostEvents_AccountServiceHangs_TimesOutAndReturns503`, `PostEvents_SustainedFailures_OpensCircuitAndFailsFastWithoutNetworkAttempt`, `PostEvents_CircuitOpensThenCooldownElapses_HalfOpensAndClosesOnSuccess` |
-| 6 | Trace propagation | `GatewayToAccountServiceFullFlowTests.PostEvents_TraceparentPropagatesOverRealNetworkCall_SameTraceIdInBothServicesLogs` |
+| 1 | Idempotency (real SQLite) | `SubmitEventHandlerTests.cs`, `GatewayToAccountServiceFullFlowTests.cs` |
+| 2 | Out-of-order handling | `EventsControllerTests.cs`, `GatewayToAccountServiceFullFlowTests.cs` |
+| 3 | Balance computation incl. zero-transaction edge case | `BalanceQueryHandlerTests.cs` (Account Service) |
+| 4 | Validation, each rejection case | `EventValidatorTests.cs` (unit level), `EventsControllerTests.cs` (HTTP level) |
+| 5 | Resiliency (circuit breaker + `503`) | `EventsControllerTests.cs` |
+| 6 | Trace propagation | `GatewayToAccountServiceFullFlowTests.cs` |
 | 7 | Full Gateway→Account Service integration | `GatewayToAccountServiceFullFlowTests.cs` — 4 tests over two real, wired `WebApplicationFactory` instances |
 | 8 | Runnable via `dotnet test`, no manual setup | this section — 94/94 passing, zero setup steps |
 

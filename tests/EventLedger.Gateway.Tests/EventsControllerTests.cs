@@ -102,7 +102,7 @@ public class EventsControllerTests : IDisposable
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
 
-        var response = await client.PostAsJsonAsync("/events", new { eventId = "evt-malformed-ts", accountId = "acct-1", type = "CREDIT", amount = 100m, currency = "USD", eventTimestamp = "not-a-date" });
+        var response = await PostWithTimestamp(client, "evt-malformed-ts", "not-a-date");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
