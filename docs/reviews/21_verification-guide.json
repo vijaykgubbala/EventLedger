@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-16T16:35:00Z",
+    "branch": "21_verification-guide",
+    "commitSha": "411245da87fcc46046d839a3d72f703bfe9d4bef",
+    "issue": 21,
+    "filesReviewed": [
+      "README.md",
+      "docs/brainstorms/21_verification-guide-brainstorm.md",
+      "docs/handoffs/2026-07-16-163209-21_verification-guide-handoff.md",
+      "docs/patterns/2026-07-16-circuit-breaker-sequential-failures-dont-trip-breaker.md",
+      "docs/plans/21_verification-guide-plan.md",
+      "docs/verification-guide.md"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "warning",
+      "file": "docs/verification-guide.md",
+      "line": 289,
+      "summary": "evt-idem-1's transcribed receivedAt in the Graceful Degradation section (16:25:02) doesn't match the same event in the Core Functionality section (15:57:16), because the two sections were captured in separate live sessions and never reconciled.",
+      "detail": "ReceivedAt is set exactly once, at insert time, and never rewritten on a re-fetch -- a genuinely continuous session re-fetching the same eventId must show the identical value both times (Section 1 itself demonstrates this correctly for its own duplicate-POST example). The Section 6 fetch of the same eventId shows a value captured 28 minutes later during the /simplify re-verification pass, undermining the guide's explicit claim that every response body shown is what was actually observed, not predictions or reused across unrelated runs. Fix: re-run the full guide's live walkthrough as one continuous session end to end and re-transcribe every section from that single run.",
+      "agent": "review-maintainability",
+      "disposition": {"status": "addressed", "reasoning": "Re-ran the entire guide as one continuous live session against a fresh docker-compose stack, re-transcribing every section's response bodies/timings from that single run. evt-idem-1's receivedAt is now identical everywhere it's referenced.", "commit": "1a71b08", "issue": null, "timestamp": "2026-07-16T17:00:00Z"}
+    },
+    {
+      "id": "F2",
+      "severity": "warning",
+      "checklistItem": "validation",
+      "file": "docs/verification-guide.md",
+      "line": 131,
+      "summary": "The Validation section claims to show 'every rejection case in EventValidator.cs' but only shows 6 of the validator's 8 distinct failure paths.",
+      "detail": "EventValidator.cs has 8 distinct ValidationFailure code paths: missing eventId, missing accountId, invalid type, amount is null ('amount is required'), amount <= 0 ('amount must be greater than 0'), missing currency, malformed/missing eventTimestamp, and metadata present but not a JSON object ('metadata must be a JSON object'). The guide shows only 6 -- it never exercises amount being entirely absent (a distinct message from amount<=0, since Amount is decimal?) or metadata being a non-object value. Both are already covered at the unit level by EventValidatorTests.cs, so the underlying test suite isn't the problem -- only the guide's 'every rejection case' framing overclaims what it demonstrates. Fix: either add the two missing curl examples, or soften the wording to 'a representative set of rejection cases.'",
+      "agent": "review-testing",
+      "disposition": {"status": "addressed", "reasoning": "Added the two missing rejection cases (amount entirely absent, metadata not a JSON object) to the Validation section during the same live re-run that fixed F1, bringing the total shown to all 8 — the 'every rejection case' claim is now literally true rather than needing to be softened.", "commit": "1a71b08", "issue": null, "timestamp": "2026-07-16T17:00:00Z"}
+    },
+    {
+      "id": "F3",
+      "severity": "suggestion",
+      "file": "architecture/observability.md",
+      "line": null,
+      "summary": "architecture/observability.md's phrasing about the custom metric ('can be logged periodically or inspected via the OpenTelemetry SDK's console/logging exporter') is softer than reality (no exporter is registered at all) -- this guide's own more precise wording exposed the gap.",
+      "detail": "Confirmed against ServiceCollectionExtensions.cs in both services: .WithMetrics(metrics => metrics.AddMeter(...)) registers no exporter. This is a pre-existing ambiguity in architecture/observability.md, not new drift introduced by this PR, and this PR doesn't touch that file. Low cost either way.",
+      "agent": "review-maintainability",
+      "disposition": {"status": "deferred", "reasoning": "Pre-existing ambiguity in a settled architecture/ decision doc, not new drift introduced by this PR. Editing it is scope creep beyond what a docs-guide story should touch, per governance/architecture-docs-edit-gate.md. Deferred to a future story/standalone fix rather than bundled here.", "commit": null, "issue": null, "timestamp": "2026-07-16T17:05:00Z"}
+    }
+  ],
+  "summary": {
+    "totalFindings": 3,
+    "critical": 0,
+    "warning": 2,
+    "suggestion": 1
+  }
+}
