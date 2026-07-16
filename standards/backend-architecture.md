@@ -62,7 +62,7 @@ the contents differ per service.
 |---|---|
 | EF Core `DbContext` + SQLite connection setup | `Infrastructure/` (per service) |
 | Serilog configuration | `Program.cs`, per [logging-dotnet.md](logging-dotnet.md) |
-| OpenTelemetry SDK registration (tracing + metrics) | `Program.cs`, per [../architecture/observability.md](../architecture/observability.md) |
+| OpenTelemetry SDK registration (tracing; metrics is issue #5's scope) | `Infrastructure/` (per service, folded into `AddGatewayInfrastructure()`/`AddAccountServiceInfrastructure()`), per [../architecture/observability.md](../architecture/observability.md) — matches every other DI/infra registration in this table, not `Program.cs` |
 | Polly resilience pipeline for the Account Service `HttpClient` | `Infrastructure/` in `EventLedger.Gateway` only — the Account Service has no outbound calls, per [service-boundaries.md](service-boundaries.md) |
 | `UNIQUE` constraint on `event_id` | EF Core entity configuration in `Infrastructure/` (per service), per [../architecture/data-model.md](../architecture/data-model.md) |
 | Request validation | `Application/` (per service), per [api.md](api.md#validation-rules-post-events) |

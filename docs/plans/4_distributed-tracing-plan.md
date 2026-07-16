@@ -50,7 +50,7 @@ The `architecture-advisor` agent flagged a real conflict: `standards/backend-arc
 
 ### Phase 4: Documentation
 
-- [ ] Update `standards/backend-architecture.md`'s "Where cross-cutting concerns live" table: change the `OpenTelemetry SDK registration (tracing + metrics)` row's location from `Program.cs` to reflect the `AddGatewayInfrastructure()`/`AddAccountServiceInfrastructure()` convention actually used (per the Architecture Pre-Flight Finding above). Note in the row or a nearby line that metrics registration (the `(+ metrics)` part of that row) is issue #5's scope, not this story's — this plan only touches tracing.
+- [x] Update `standards/backend-architecture.md`'s "Where cross-cutting concerns live" table: changed the `OpenTelemetry SDK registration` row's location from `Program.cs` to `Infrastructure/` (folded into `AddGatewayInfrastructure()`/`AddAccountServiceInfrastructure()`), matching every other DI/infra row in that table. Row text also now notes metrics is issue #5's scope, not this story's.
 
 ## Testing Strategy
 
