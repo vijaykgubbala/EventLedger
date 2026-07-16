@@ -58,20 +58,20 @@ Use one continuous test-data narrative across this section (a single
 `accountId` reused across idempotency/out-of-order/balance so the reader
 follows one coherent story rather than disconnected throwaway examples).
 
-- [ ] Idempotency: `POST /events` with a fresh `eventId`, confirm `201`;
+- [x] Idempotency: `POST /events` with a fresh `eventId`, confirm `201`;
   `POST` the identical payload again, confirm `200` with the *same*
   `receivedAt` (not a fresh one) and unchanged balance via a follow-up
   balance check. Run live, capture actual response bodies for the guide.
-- [ ] Out-of-order: `POST` three events for the same account with
+- [x] Out-of-order: `POST` three events for the same account with
   `eventTimestamp`s deliberately submitted out of chronological order,
   then `GET /events?account=...` and confirm the array is sorted by
   `eventTimestamp` (not arrival order), then check the balance reflects
   the correct sum regardless of arrival order. Run live.
-- [ ] Balance: show a zero-transaction account (`GET .../balance` on a
+- [x] Balance: show a zero-transaction account (`GET .../balance` on a
   never-used `accountId`, expect `{"accountId":"...","balance":0}`, per
   the Account Service's confirmed "never 404" behavior) and the
   mixed-credit/debit result from the out-of-order step above. Run live.
-- [ ] Validation: one rejection example per rule in `EventValidator.cs`
+- [x] Validation: one rejection example per rule in `EventValidator.cs`
   (6 total — missing `eventId`, missing `accountId`, invalid `type`,
   `amount <= 0`, missing `currency`, malformed `eventTimestamp`), each
   showing the exact `400` response body with its specific message
