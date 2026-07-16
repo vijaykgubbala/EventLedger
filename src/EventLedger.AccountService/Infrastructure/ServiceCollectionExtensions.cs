@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<ApplyTransactionHandler>();
         builder.Services.AddScoped<BalanceQueryHandler>();
         builder.Services.AddScoped<AccountDetailsHandler>();
+        builder.Services.AddScoped<HealthCheckHandler>();
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService(serviceName))
             .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation())
