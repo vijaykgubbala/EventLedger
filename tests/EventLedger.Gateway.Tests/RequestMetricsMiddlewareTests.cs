@@ -56,7 +56,7 @@ public class RequestMetricsMiddlewareTests : IDisposable
     public async Task GetHealth_RecordsOneRequestCounterMeasurementTaggedWithEndpointAndStatus()
     {
         var measurements = new List<RecordedMeasurement>();
-        using var listener = CreateListener("EventLedger.Gateway", measurements);
+        var listener = CreateListener("EventLedger.Gateway", measurements);
 
         await using var factory = new WebApplicationFactory<Program>();
         using var client = factory.CreateClient();
@@ -78,7 +78,7 @@ public class RequestMetricsMiddlewareTests : IDisposable
         // events/{eventId} has a route parameter — this is what actually exercises the Q6
         // cardinality decision (route template vs. raw path), unlike /health which has none.
         var measurements = new List<RecordedMeasurement>();
-        using var listener = CreateListener("EventLedger.Gateway", measurements);
+        var listener = CreateListener("EventLedger.Gateway", measurements);
 
         await using var factory = new WebApplicationFactory<Program>();
         using var client = factory.CreateClient();
@@ -96,7 +96,7 @@ public class RequestMetricsMiddlewareTests : IDisposable
     public async Task RequestThatThrowsUnhandledException_StillRecordsMeasurement()
     {
         var measurements = new List<RecordedMeasurement>();
-        using var listener = CreateListener("EventLedger.Gateway", measurements);
+        var listener = CreateListener("EventLedger.Gateway", measurements);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             builder.ConfigureServices(services =>
