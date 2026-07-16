@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri(builder.Configuration["AccountService:BaseUrl"]!));
         builder.Services.AddScoped<EventValidator>();
         builder.Services.AddScoped<SubmitEventHandler>();
+        builder.Services.AddScoped<EventQueryHandler>();
 
         return builder;
     }

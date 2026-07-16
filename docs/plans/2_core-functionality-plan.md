@@ -103,12 +103,16 @@ dependency, exercised indirectly by every later phase's tests.
 
 ### Phase 5: Gateway — Controllers
 
-- [ ] Test: `POST /events` with a valid payload → `201` with the full record (FB-1) (integration, Phase 5)
-- [ ] Test: `POST /events` with an invalid payload → `400` with `{error, message, details}` per [standards/api.md](../../standards/api.md) (FB-3/FB-4/FB-5) (integration, Phase 5)
-- [ ] Test: `GET /events/{id}` for an existing id → `200` with the record (FB-6) (integration, Phase 5)
-- [ ] Test: `GET /events/{id}` for a non-existent id → `404` (FB-6) (integration, Phase 5)
-- [ ] Test: `GET /events?account={accountId}` → array ordered ascending by `eventTimestamp`, not insertion order (FB-7) (integration, Phase 5)
-- [ ] Implement: `src/EventLedger.Gateway/Controllers/EventsController.cs` — `POST /events`, `GET /events/{id}`, `GET /events?account={accountId}` (parses request/routes only, per [standards/backend-architecture.md](../../standards/backend-architecture.md#file-placement-table) — no validation or business logic here, both live in `Application/` from Phase 4)
+- [x] Test: `POST /events` with a valid payload → `201` with the full record (FB-1) (integration, Phase 5)
+- [x] Test: `POST /events` with an invalid payload → `400` with `{error, message, details}` per [standards/api.md](../../standards/api.md) (FB-3/FB-4/FB-5) (integration, Phase 5)
+- [x] Test: `GET /events/{id}` for an existing id → `200` with the record (FB-6) (integration, Phase 5)
+- [x] Test: `GET /events/{id}` for a non-existent id → `404` (FB-6) (integration, Phase 5)
+- [x] Test: `GET /events?account={accountId}` → array ordered ascending by `eventTimestamp`, not insertion order (FB-7) (integration, Phase 5)
+- [x] Implement: `src/EventLedger.Gateway/Controllers/EventsController.cs` — `POST /events`, `GET /events/{id}`, `GET /events?account={accountId}` (parses request/routes only, per [standards/backend-architecture.md](../../standards/backend-architecture.md#file-placement-table) — no validation or business logic here, both live in `Application/` from Phase 4)
+
+**Addition not itemized in the original plan text**: `src/EventLedger.Gateway/Application/EventQueryHandler.cs` (`GetByIdAsync`, `ListByAccountAsync`, unit-tested in `EventQueryHandlerTests.cs`). Phase 4 only built `EventValidator`/`SubmitEventHandler`, leaving no non-`Controllers/` place for the two `GET` endpoints' `DbContext` access to live — but [standards/backend-architecture.md](../../standards/backend-architecture.md#file-placement-table) is explicit that `Controllers/` must not contain direct `DbContext` usage. `ListByAccountAsync` orders client-side (materialize-then-order), the same pattern already documented in [docs/patterns/2026-07-15-sqlite-datetimeoffset-orderby.md](../patterns/2026-07-15-sqlite-datetimeoffset-orderby.md), which specifically flagged this endpoint as the next place the `DateTimeOffset` `ORDER BY` limitation would recur. Registered via `AddScoped<EventQueryHandler>()` alongside the other Phase 4/5 handlers.
+
+`EventsController`'s integration tests use a `WebApplicationFactory<Program>` with the real DI container, but with `GatewayDbContext` repointed at an isolated temp SQLite file (via `services.RemoveAll<DbContextOptions<GatewayDbContext>>()` + a fresh `AddDbContext` call in `ConfigureServices`) and the `"AccountService"` named `HttpClient`'s primary handler swapped for a stub via `.ConfigurePrimaryHttpMessageHandler(...)` — same rationale as Phase 4's stub-handler note: the real Account Service Controllers don't exist until Phase 6.
 
 ### Phase 6: Account Service — Controllers
 
