@@ -1,0 +1,12 @@
+using EventLedger.Gateway.Domain;
+
+namespace EventLedger.Gateway.Application;
+
+public enum SubmitEventOutcome
+{
+    Created,
+    Duplicate,
+    AccountServiceUnavailable
+}
+
+public sealed record SubmitEventResult(SubmitEventOutcome Outcome, EventRecord? Event);

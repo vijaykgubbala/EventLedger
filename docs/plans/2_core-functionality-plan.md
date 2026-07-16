@@ -84,18 +84,20 @@ dependency, exercised indirectly by every later phase's tests.
 
 ### Phase 4: Gateway — Application layer
 
-- [ ] Test: `EventValidator` — each required field missing individually → failure naming that field (FB-3) (unit, Phase 4)
-- [ ] Test: `EventValidator` — `amount <= 0` → failure (FB-4) (unit, Phase 4)
-- [ ] Test: `EventValidator` — `type` not exactly `"CREDIT"`/`"DEBIT"`, including wrong case (`"credit"`) → failure (FB-5) (unit, Phase 4)
-- [ ] Test: `EventValidator` — a fully valid payload → no failures (unit, Phase 4)
-- [ ] Test: `SubmitEventHandler` — valid new event → calls the Account Service, inserts locally, returns the new record (FB-1/FB-2) (integration, Phase 4)
-- [ ] Test: `SubmitEventHandler` — `eventId` already stored locally → returns the existing record, Account Service **not** called (ID-1, fast-path) (integration, Phase 4)
-- [ ] Test: `SubmitEventHandler` — two concurrent calls with the same new `eventId` → exactly one row exists, the `UNIQUE`-violation path returns the winner's record to the loser (ID-2, Gateway side) (integration, Phase 4)
-- [ ] Test: `SubmitEventHandler` — `eventId` resubmitted with a different `amount`/`type` → returns the original unchanged, one `Warning` log line emitted (ID-4) (integration, Phase 4)
-- [ ] Test: `SubmitEventHandler` — events for one account submitted with `eventTimestamp`s out of arrival order → balance correct after all are applied (FB-8) (integration, Phase 4)
-- [ ] Implement: `src/EventLedger.Gateway/Application/EventValidator.cs`
-- [ ] Implement: `src/EventLedger.Gateway/Application/SubmitEventHandler.cs` — fast-path `SELECT` by `EventId`; if not found, call the Account Service via a plain `HttpClient` (**no** Polly pipeline in this story — see Known Constraints); on confirmed success, attempt `INSERT`, handling the `UNIQUE`-violation refetch per [architecture/gateway-architecture.md](../../architecture/gateway-architecture.md#post-events-flow); on the fast-path hit, compare the incoming payload's `Type`/`Amount`/`Currency`/`EventTimestamp` (not `Metadata` — opaque per [standards/events.md](../../standards/events.md)) against the stored record and log one `Warning` line if they differ
-- [ ] Implement: extend `AddGatewayInfrastructure(...)` with explicit `builder.Services.AddScoped<EventValidator>();`, `AddScoped<SubmitEventHandler>();` (Decisions Made, item 8)
+- [x] Test: `EventValidator` — each required field missing individually → failure naming that field (FB-3) (unit, Phase 4)
+- [x] Test: `EventValidator` — `amount <= 0` → failure (FB-4) (unit, Phase 4)
+- [x] Test: `EventValidator` — `type` not exactly `"CREDIT"`/`"DEBIT"`, including wrong case (`"credit"`) → failure (FB-5) (unit, Phase 4)
+- [x] Test: `EventValidator` — a fully valid payload → no failures (unit, Phase 4)
+- [x] Test: `SubmitEventHandler` — valid new event → calls the Account Service, inserts locally, returns the new record (FB-1/FB-2) (integration, Phase 4)
+- [x] Test: `SubmitEventHandler` — `eventId` already stored locally → returns the existing record, Account Service **not** called (ID-1, fast-path) (integration, Phase 4)
+- [x] Test: `SubmitEventHandler` — two concurrent calls with the same new `eventId` → exactly one row exists, the `UNIQUE`-violation path returns the winner's record to the loser (ID-2, Gateway side) (integration, Phase 4)
+- [x] Test: `SubmitEventHandler` — `eventId` resubmitted with a different `amount`/`type` → returns the original unchanged, one `Warning` log line emitted (ID-4) (integration, Phase 4)
+- [x] Test: `SubmitEventHandler` — events for one account submitted with `eventTimestamp`s out of arrival order → balance correct after all are applied (FB-8) (integration, Phase 4)
+- [x] Implement: `src/EventLedger.Gateway/Application/EventValidator.cs`. Takes primitive parameters (`eventId`, `accountId`, `type`, `amount`, `currency`, `eventTimestamp` — all nullable), not a wire-shape DTO, mirroring the Account Service's `ApplyTransactionHandler` (Phase 3) precedent; the Controllers-layer request DTO (Phase 5) will unpack into these primitives before calling in.
+- [x] Implement: `src/EventLedger.Gateway/Application/SubmitEventHandler.cs` — fast-path `SELECT` by `EventId`; if not found, call the Account Service via a plain `HttpClient` (**no** Polly pipeline in this story — see Known Constraints); on confirmed success, attempt `INSERT`, handling the `UNIQUE`-violation refetch per [architecture/gateway-architecture.md](../../architecture/gateway-architecture.md#post-events-flow); on the fast-path hit, compare the incoming payload's `Type`/`Amount`/`Currency`/`EventTimestamp` (not `Metadata` — opaque per [standards/events.md](../../standards/events.md)) against the stored record and log one `Warning` line if they differ. **Addition not itemized in the original plan text**: registers a named `HttpClient` (`"AccountService"`, base address from `AccountService:BaseUrl`) via `AddHttpClient("AccountService", ...)` inside `AddGatewayInfrastructure(...)` — necessary for the handler to have anything to call, and structured so issue #6 can later attach a Polly resilience handler to this same named client without touching `SubmitEventHandler`. `SubmitEventHandler` takes `IHttpClientFactory` (not a typed client) specifically so it stays compatible with the plan's explicit `AddScoped<SubmitEventHandler>()` registration (a typed-client registration would conflict with a separate `AddScoped` call).
+- [x] Implement: extend `AddGatewayInfrastructure(...)` with explicit `builder.Services.AddScoped<EventValidator>();`, `AddScoped<SubmitEventHandler>();` (Decisions Made, item 8)
+
+**Test strategy note**: the Account Service's own HTTP endpoints don't exist until Phase 6, so `SubmitEventHandler`'s integration tests fake the outbound call with a stub `HttpMessageHandler` wrapped in a test-only `IHttpClientFactory` (see `StubHttpClientFactory`/`CountingStubHandler` in `SubmitEventHandlerTests.cs`) rather than depending on a real running Account Service. This keeps Phase 4 self-contained; the one true end-to-end Gateway→Account-Service test happens once both services' Controllers exist, per [standards/backend-architecture.md](../../standards/backend-architecture.md#test-project-layout).
 
 ### Phase 5: Gateway — Controllers
 

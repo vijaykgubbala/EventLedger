@@ -1,3 +1,4 @@
+using EventLedger.Gateway.Application;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -20,6 +21,10 @@ public static class ServiceCollectionExtensions
         builder.Services.AddControllers();
         builder.Services.AddDbContext<GatewayDbContext>(opt =>
             opt.UseSqlite(builder.Configuration.GetConnectionString("Gateway")));
+        builder.Services.AddHttpClient("AccountService", client =>
+            client.BaseAddress = new Uri(builder.Configuration["AccountService:BaseUrl"]!));
+        builder.Services.AddScoped<EventValidator>();
+        builder.Services.AddScoped<SubmitEventHandler>();
 
         return builder;
     }
