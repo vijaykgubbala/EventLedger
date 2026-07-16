@@ -27,20 +27,8 @@ exposed here for verification only).
 | `GET /accounts/{id}/balance` (Account Service directly) | `curl http://localhost:5199/accounts/acct-1/balance` |
 | `GET /health` (either service) | `curl http://localhost:5099/health` / `curl http://localhost:5199/health` |
 
-Each row was confirmed live during this guide's authoring; for example:
-
-```
-$ curl -X POST http://localhost:5099/events \
-    -H "Content-Type: application/json" \
-    -d '{"eventId":"evt-cheatsheet-1","accountId":"acct-cheatsheet","type":"CREDIT","amount":100,"currency":"USD","eventTimestamp":"2026-07-16T10:00:00Z"}'
-
-{"eventId":"evt-cheatsheet-1","accountId":"acct-cheatsheet","type":"CREDIT","amount":100,"currency":"USD","eventTimestamp":"2026-07-16T10:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T15:54:43.2513198+00:00"}
-# HTTP 201
-
-$ curl http://localhost:5099/accounts/acct-cheatsheet/balance
-{"accountId":"acct-cheatsheet","balance":100.0}
-# HTTP 200
-```
+Each row was confirmed live during this guide's authoring — see Section 1
+below for a fully worked example (submit, then check the balance).
 
 ## 1. Core Functionality
 
@@ -222,8 +210,13 @@ its Account Service equivalent, both of which subscribe a
 
 The Gateway wraps its call to the Account Service in a Polly pipeline:
 circuit breaker (outermost) → 2s per-attempt timeout → 2 retries at a
-fixed 200ms delay (innermost). This exercise watches all three states —
-bounded failure, open circuit, recovery — against a real outage.
+fixed 200ms delay (innermost). Exact configured values and the full
+graceful-degradation table are in
+[architecture/resiliency.md](../architecture/resiliency.md) — this
+section is the live, hands-on version of that document. Sections 5 and
+6 below share a single outage window: one `stop`, one `start`, proving
+both resiliency and graceful degradation without restarting the Account
+Service twice.
 
 **Stop the Account Service:**
 
@@ -240,16 +233,20 @@ $ time curl -X POST http://localhost:5099/events -H "Content-Type: application/j
     -d '{"eventId":"evt-cb-1","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
-real  0m6.761s   # bounded — never hangs indefinitely, and never a 500
+real  0m6.812s   # bounded — never hangs indefinitely, and never a 500
 ```
 
 **Trip the circuit open.** The breaker needs ≥4 calls with a ≥50%
-failure ratio within a 10s window. Firing exactly 4 sequentially doesn't
-reliably work — each bounded call above already takes ~6.7s, so by the
-time a 4th sequential call fires, the sampling window has moved on. Fire
-several **concurrently** instead, so they land in the same window
-(10 was used here, more than enough margin over the theoretical minimum
-of 4):
+failure ratio within a 10s window (per `architecture/resiliency.md`'s
+configured values). Firing exactly 4 sequentially doesn't reliably work
+— each bounded call above already takes ~6.7–6.8s, so by the time a 4th
+sequential call fires, the sampling window has moved on. Concurrent
+firing is required, and even then the exact count needed to trip it in
+practice was timing-sensitive during this guide's own authoring — one
+run tripped on the first burst of 10, another needed a second burst
+before it opened. Fire a burst of 10 concurrently, then check; repeat
+the burst if the check still shows a bounded (~6.7s) response rather
+than a fast one:
 
 ```
 $ for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -268,31 +265,17 @@ $ time curl -X POST http://localhost:5099/events -H "Content-Type: application/j
     -d '{"eventId":"evt-cb-check","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
-real  0m0.324s   # near-instant — no network attempt, the circuit is open
-```
-
-**Wait for the 5-second break duration, then recover:**
-
-```
-$ docker compose start account-service
-$ sleep 8   # break duration (5s) + healthcheck settling time, with margin
-
-$ curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
-    -d '{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
-
-{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:10:35.0646314+00:00"}
-real  0m0.704s   # HTTP 201 — the half-open trial call succeeded, circuit closed again
+real  0m0.450s   # near-instant — no network attempt, the circuit is open
 ```
 
 ## 6. Graceful Degradation
 
-With the Account Service stopped, four distinct behaviors were confirmed
-against the `acct-verify-1` account from Section 1 (which already has
-existing events):
+With the circuit still open and the Account Service still stopped from
+Section 5, four distinct behaviors are confirmed against the
+`acct-verify-1` account from Section 1 (which already has an existing
+event) — no need to stop the Account Service again, it's already down:
 
 ```
-$ docker compose stop account-service
-
 $ curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
     -d '{"eventId":"evt-outage-nopersist","accountId":"acct-verify-1","type":"CREDIT","amount":999,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
@@ -303,16 +286,27 @@ $ curl http://localhost:5099/events/evt-outage-nopersist
 # HTTP 404 — the failed submission above was never persisted
 
 $ curl http://localhost:5099/events/evt-idem-1
-{"eventId":"evt-idem-1","accountId":"acct-verify-1", ...}
+{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:25:02.7567023+00:00"}
 # HTTP 200 — reads of existing, already-persisted data are entirely unaffected
 
 $ curl "http://localhost:5099/events?account=acct-verify-1"
-[{"eventId":"evt-idem-1", ...}, {"eventId":"evt-ooo-earliest", ...}, ...]
+[{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:25:02.7567023+00:00"}]
 # HTTP 200 — same: local-only read, doesn't depend on the Account Service
 
 $ curl http://localhost:5099/accounts/acct-verify-1/balance
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
-# HTTP 503 — the balance passthrough does depend on the Account Service, and degrades clearly
+# HTTP 503 — the balance passthrough does depend on the Account Service, and degrades clearly, per architecture/resiliency.md's graceful-degradation table
+```
 
-$ docker compose start account-service   # leave the stack healthy again
+**Now recover, once, for both sections:**
+
+```
+$ docker compose start account-service
+$ sleep 8   # break duration (5s) + healthcheck settling time, with margin
+
+$ curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+    -d '{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+
+{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:26:56.5007079+00:00"}
+real  0m0.978s   # HTTP 201 — the half-open trial call succeeded, circuit closed again
 ```
