@@ -97,6 +97,19 @@ public class EventsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task PostEvents_MalformedEventTimestamp_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/events", new { eventId = "evt-malformed-ts", accountId = "acct-1", type = "CREDIT", amount = 100m, currency = "USD", eventTimestamp = "not-a-date" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("validation_error", body!.Error);
+    }
+
+    [Fact]
     public async Task GetEventById_ExistingId_Returns200WithRecord()
     {
         using var factory = CreateFactory();
