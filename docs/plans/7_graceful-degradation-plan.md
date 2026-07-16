@@ -78,7 +78,7 @@ crash-then-retry idempotency guarantee ("Verified" acceptance item).
 
 ### Phase 2: Gateway — Controllers (`AccountsController`)
 
-- [ ] Write test: `AccountsControllerTests.cs` (new file, same
+- [x] Write test: `AccountsControllerTests.cs` (new file, same
   `WebApplicationFactory<Program>` + stub-handler shape as
   `EventsControllerTests.cs`) — `GET /accounts/{accountId}/balance`
   against a stub Account Service returning `200 {"accountId":"acct-1","balance":150}`
@@ -86,20 +86,23 @@ crash-then-retry idempotency guarantee ("Verified" acceptance item).
   `EventsControllerTests.cs`, or a local equivalent if cross-file reuse
   isn't practical — confirm during execution which is simpler) → Gateway
   returns `200` with the identical body.
-- [ ] Write test: `AccountsControllerTests.cs` — same call against
+  - Cross-file reuse wasn't practical: `FlakyAccountServiceHandler` is
+    `private` to `EventsControllerTests.cs`. Used a local
+    `StubBalanceHandler(HttpStatusCode, string body)` instead.
+- [x] Write test: `AccountsControllerTests.cs` — same call against
   `FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue)` (always
   unreachable) → Gateway returns `503` with
   `{ error: "account_service_unavailable", message: "The Account Service is currently unavailable." }`
   — identical error code and message text to `EventsController`'s
   existing `POST /events` unavailable case.
-- [ ] Implement `src/EventLedger.Gateway/Controllers/AccountsController.cs`:
+- [x] Implement `src/EventLedger.Gateway/Controllers/AccountsController.cs`:
   `[ApiController]`, `[Route("accounts")]`, primary-constructor DI
   (`BalanceQueryHandler`), single action
   `[HttpGet("{accountId}/balance")] GetBalance(string accountId, CancellationToken cancellationToken)`.
   Maps `Success` → `Content(result.Body!, "application/json")` (verbatim
   passthrough, no re-serialization/DTO); `AccountServiceUnavailable` →
   `StatusCode(503, new { error = "account_service_unavailable", message = "The Account Service is currently unavailable." })`.
-- [ ] Register `BalanceQueryHandler` in
+- [x] Register `BalanceQueryHandler` in
   `src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs`
   (`builder.Services.AddScoped<BalanceQueryHandler>();`, alongside the
   existing handler registrations at lines 56–59). No other DI or
