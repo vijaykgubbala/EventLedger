@@ -1,0 +1,104 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-16T12:57:38Z",
+    "branch": "7_graceful-degradation",
+    "commitSha": "32d909893118236e9cafd95adaeac8cd4ff0287a",
+    "issue": 7,
+    "filesReviewed": [
+      "architecture/gateway-architecture.md",
+      "docs/brainstorms/7_graceful-degradation-brainstorm.md",
+      "docs/handoffs/2026-07-16-125738-7_graceful-degradation-handoff.md",
+      "docs/plans/7_graceful-degradation-plan.md",
+      "docs/simplify-patterns.md",
+      "src/EventLedger.Gateway/Application/BalanceQueryHandler.cs",
+      "src/EventLedger.Gateway/Controllers/AccountsController.cs",
+      "src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs",
+      "tests/EventLedger.Gateway.Tests/AccountsControllerTests.cs",
+      "tests/EventLedger.Gateway.Tests/BalanceQueryHandlerTests.cs",
+      "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs",
+      "tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
+      "tests/EventLedger.Gateway.Tests/StubResponseHandler.cs"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Application/BalanceQueryHandler.cs",
+      "line": 13,
+      "summary": "accountId is interpolated unescaped into the outbound Account Service request path, allowing route confusion / over-exposure.",
+      "detail": "client.GetAsync($\"/accounts/{accountId}/balance\", cancellationToken) builds the URL by raw string interpolation with no Uri.EscapeDataString(accountId). A crafted accountId containing '?' or '/' can redirect the outbound request to a different Account Service route (e.g. the GetAccount route, which returns full transaction history) rather than the intended balance-only endpoint, letting the Gateway's balance passthrough relay more data than its contract promises. Corroborated independently by review-dotnet (same root cause, filed as a suggestion) and review-security (filed as a warning with a concrete exploit walkthrough); the more specific security finding is kept as primary. Note: the identical unescaped-interpolation pattern pre-exists in SubmitEventHandler.cs:39 from issues #2/#6 — this diff adds a second, independently reachable instance rather than introducing the pattern new.",
+      "agent": "review-security",
+      "corroboratedBy": ["review-dotnet"],
+      "disposition": {"status": "addressed", "reasoning": "Escaped accountId with Uri.EscapeDataString in both BalanceQueryHandler.cs and the pre-existing SubmitEventHandler.cs instance; added a regression test proving the exploit path is closed.", "commit": "b1e2884", "issue": null, "timestamp": "2026-07-16T13:15:00Z"}
+    },
+    {
+      "id": "F2",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Application/BalanceQueryHandler.cs",
+      "line": 15,
+      "summary": "BalanceQueryHandler swallows Account Service failures without logging, contradicting standards/logging-dotnet.md's explicit requirement.",
+      "detail": "standards/logging-dotnet.md requires Account Service call failures to be logged at Warning level on the Gateway ('expected under degraded conditions, not a bug'). SubmitEventHandler.cs does this for both its exception catch and its !response.IsSuccessStatusCode branch (lines 43-51, 55-60), but BalanceQueryHandler has no ILogger dependency and both of its equivalent branches (lines 15-18 and 22-25) return silently. During an Account Service outage, an operator watching Serilog output would see POST /events failures but not GET /accounts/{accountId}/balance failures.",
+      "agent": "review-dotnet",
+      "disposition": {"status": "addressed", "reasoning": "Injected ILogger<BalanceQueryHandler> and added LogWarning calls in both failure branches, mirroring SubmitEventHandler.cs's existing pattern.", "commit": "9a22876", "issue": null, "timestamp": "2026-07-16T13:25:00Z"}
+    },
+    {
+      "id": "F3",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Controllers/AccountsController.cs",
+      "line": 20,
+      "summary": "The 503 account_service_unavailable error envelope is a verbatim literal duplicated between AccountsController and EventsController.",
+      "detail": "AccountsController.cs:20 reproduces the exact anonymous object EventsController.cs:41 already defines. Nothing enforces the two stay in sync; a future wording tweak or added field in one could silently diverge from the other.",
+      "agent": "review-maintainability",
+      "disposition": {"status": "addressed", "reasoning": "Extracted a shared ControllerBaseExtensions.AccountServiceUnavailable() extension method; both controllers now call it instead of duplicating the literal.", "commit": "6571a01", "issue": null, "timestamp": "2026-07-16T13:32:00Z"}
+    },
+    {
+      "id": "F4",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Application/BalanceQueryHandler.cs",
+      "line": 15,
+      "summary": "The Account-Service-unreachable classification logic (exception catch + non-success status check) is duplicated between SubmitEventHandler and BalanceQueryHandler rather than factored once.",
+      "detail": "BalanceQueryHandler.cs:15-25 copies SubmitEventHandler.cs:43-59's exact classification pattern verbatim (a conscious copy, per the plan's own note). This is the central decision the whole graceful-degradation story hinges on, now living in two places that must be kept in sync by hand.",
+      "agent": "review-maintainability",
+      "disposition": {"status": "ignored", "reasoning": "This exact tradeoff (extracting a shared Account-Service-call classifier at only 2 call sites) was already evaluated and declined twice this story: the brainstorm's rejected 'Approach 3' generic proxy mechanism, and the /simplify altitude-angle pass during execution, both citing this project's explicit YAGNI stance (architecture/vertical-architecture.md's system-shape section). A third occurrence would be the natural trigger to extract, per this repo's established 'extract at 3rd copy' convention.", "commit": null, "issue": null, "timestamp": "2026-07-16T13:33:00Z"}
+    },
+    {
+      "id": "F5",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/AccountsControllerTests.cs",
+      "line": null,
+      "summary": "No dedicated test proves the new balance endpoint's timeout/circuit-breaker behavior, unlike POST /events (RES-2 through RES-5).",
+      "detail": "BalanceQueryHandler/AccountsController reuse the same named 'AccountService' HttpClient and resilience pipeline as SubmitEventHandler, so this is almost certainly correctly covered transitively, but nothing proves a hung or sustained-failing balance call is bounded the same way. Not required by the assignment checklist (scoped to POST /events).",
+      "agent": "review-testing",
+      "disposition": {"status": "ignored", "reasoning": "The resilience pipeline itself is already exhaustively tested against POST /events (RES-2 through RES-5). Both endpoints share the exact same named \"AccountService\" HttpClient + Polly registration with zero endpoint-specific resilience configuration, so a duplicate timeout/circuit-breaker test on the balance endpoint would exercise the DI wiring, not new behavior. Not required by the assignment's checklist, which is scoped to POST /events.", "commit": null, "issue": null, "timestamp": "2026-07-16T13:34:00Z"}
+    },
+    {
+      "id": "F6",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/BalanceQueryHandlerTests.cs",
+      "line": 21,
+      "summary": "BalanceQueryHandlerTests only exercises the HttpRequestException branch of the catch clause, not ExecutionRejectedException.",
+      "detail": "GetBalanceAsync_AccountServiceUnreachable_ReturnsUnavailable only throws HttpRequestException; no test forces an ExecutionRejectedException (e.g. Polly's BrokenCircuitException/TimeoutRejectedException) to confirm that branch also maps correctly. Low priority since the logic is identical to SubmitEventHandler's already-covered branch.",
+      "agent": "review-testing",
+      "disposition": {"status": "addressed", "reasoning": "Added GetBalanceAsync_ResiliencePipelineRejectsCall_ReturnsUnavailable with a new RejectingHandler stub throwing Polly.Timeout.TimeoutRejectedException, exercising the previously-untested ExecutionRejectedException branch.", "commit": "10c864c", "issue": null, "timestamp": "2026-07-16T13:38:00Z"}
+    },
+    {
+      "id": "F7",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/BalanceQueryHandlerTests.cs",
+      "line": 42,
+      "summary": "StubHttpClientFactory is redefined as a near-identical private class in BalanceQueryHandlerTests.cs, duplicating the one in SubmitEventHandlerTests.cs.",
+      "detail": "Both files define a private sealed class StubHttpClientFactory : IHttpClientFactory with the same shape; SubmitEventHandlerTests.cs's version is strictly more general. This is the same category of duplication docs/simplify-patterns.md's newly-added StubResponseHandler entry already called out and fixed, but the fix wasn't applied here (predates this diff's own StubResponseHandler cleanup, and would require touching SubmitEventHandlerTests.cs, an issue #2-era file outside this diff's original scope).",
+      "agent": "review-maintainability",
+      "disposition": {"status": "addressed", "reasoning": "Extracted a shared internal StubHttpClientFactory.cs (HttpMessageHandler-accepting shape, the actually-more-general of the two duplicates -- verified before applying, since the finding's stated direction of which copy subsumed the other was inaccurate). Updated SubmitEventHandlerTests.cs's CreateHandler(HttpStatusCode) overload to construct a CountingStubHandler explicitly; deleted both private duplicates.", "commit": "4455075", "issue": null, "timestamp": "2026-07-16T13:45:00Z"}
+    }
+  ],
+  "summary": {
+    "totalFindings": 7,
+    "critical": 0,
+    "warning": 4,
+    "suggestion": 3
+  }
+}
