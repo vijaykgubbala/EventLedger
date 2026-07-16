@@ -46,14 +46,14 @@ $ curl -X POST http://localhost:5099/events \
     -H "Content-Type: application/json" \
     -d '{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
-{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T15:57:16.5204127+00:00"}
+{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:44:28.7886235+00:00"}
 # HTTP 201
 
 $ curl -X POST http://localhost:5099/events \
     -H "Content-Type: application/json" \
     -d '{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
-{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T15:57:16.5204127+00:00"}
+{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:44:28.7886235+00:00"}
 # HTTP 200 — same receivedAt as the first response, not a fresh one
 
 $ curl http://localhost:5099/accounts/acct-verify-1/balance
@@ -116,8 +116,8 @@ $ curl http://localhost:5099/accounts/acct-verify-never-used/balance
 
 ### Validation
 
-Every rejection case in `EventValidator.cs`, each returning `400` with
-a specific field name and message:
+Every rejection case in `EventValidator.cs` — all 8 — each returning
+`400` with a specific field name and message:
 
 ```
 $ curl -X POST http://localhost:5099/events -d '{"accountId":"acct-verify-1","type":"CREDIT","amount":100,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
@@ -132,17 +132,25 @@ $ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-3","accountI
 {"error":"validation_error","message":"type must be exactly \"CREDIT\" or \"DEBIT\"","details":{"field":"type"}}
 # HTTP 400 — invalid type
 
-$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-4","accountId":"acct-verify-1","type":"CREDIT","amount":0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-4","accountId":"acct-verify-1","type":"CREDIT","currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+{"error":"validation_error","message":"amount is required","details":{"field":"amount"}}
+# HTTP 400 — amount entirely absent
+
+$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-5","accountId":"acct-verify-1","type":"CREDIT","amount":0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 {"error":"validation_error","message":"amount must be greater than 0","details":{"field":"amount"}}
 # HTTP 400 — amount <= 0
 
-$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-5","accountId":"acct-verify-1","type":"CREDIT","amount":100,"eventTimestamp":"2026-07-16T09:00:00Z"}'
+$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-6","accountId":"acct-verify-1","type":"CREDIT","amount":100,"eventTimestamp":"2026-07-16T09:00:00Z"}'
 {"error":"validation_error","message":"currency is required","details":{"field":"currency"}}
 # HTTP 400 — missing currency
 
-$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-6","accountId":"acct-verify-1","type":"CREDIT","amount":100,"currency":"USD","eventTimestamp":"not-a-date"}'
+$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-7","accountId":"acct-verify-1","type":"CREDIT","amount":100,"currency":"USD","eventTimestamp":"not-a-date"}'
 {"error":"validation_error","message":"eventTimestamp must be a valid ISO 8601 timestamp","details":{"field":"eventTimestamp"}}
 # HTTP 400 — malformed eventTimestamp
+
+$ curl -X POST http://localhost:5099/events -d '{"eventId":"evt-bad-8","accountId":"acct-verify-1","type":"CREDIT","amount":100,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z","metadata":"not-an-object"}'
+{"error":"validation_error","message":"metadata must be a JSON object","details":{"field":"metadata"}}
+# HTTP 400 — metadata present but not a JSON object
 ```
 
 (All requests above include `-H "Content-Type: application/json"`,
@@ -168,14 +176,14 @@ puts `TraceId` at the top level of each JSON log line *and* duplicates it
 inside a nested `Properties` object — either location works for a grep.
 
 ```
-$ curl -s -o /dev/null -X POST http://localhost:5099/events \
+$ curl -X POST http://localhost:5099/events \
     -H "Content-Type: application/json" \
     -d '{"eventId":"evt-trace-demo","accountId":"acct-trace-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
 $ docker compose logs gateway --since 30s | grep '"Path":"/events"' | grep -o '"TraceId":"[a-f0-9]*"'
-"TraceId":"fee82614b521da9c5c5edf4de46966ef"
+"TraceId":"71109f2b93d4b6a4c540668a228cb7d4"
 
-$ docker compose logs account-service --since 30s | grep -c "fee82614b521da9c5c5edf4de46966ef"
+$ docker compose logs account-service --since 30s | grep -c "71109f2b93d4b6a4c540668a228cb7d4"
 10
 ```
 
@@ -233,40 +241,49 @@ $ time curl -X POST http://localhost:5099/events -H "Content-Type: application/j
     -d '{"eventId":"evt-cb-1","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
-real  0m6.812s   # bounded — never hangs indefinitely, and never a 500
+real  0m6.773s   # bounded — never hangs indefinitely, and never a 500
 ```
 
-**Trip the circuit open.** The breaker needs ≥4 calls with a ≥50%
-failure ratio within a 10s window (per `architecture/resiliency.md`'s
-configured values). Firing exactly 4 sequentially doesn't reliably work
-— each bounded call above already takes ~6.7–6.8s, so by the time a 4th
-sequential call fires, the sampling window has moved on. Concurrent
-firing is required, and even then the exact count needed to trip it in
-practice was timing-sensitive during this guide's own authoring — one
-run tripped on the first burst of 10, another needed a second burst
-before it opened. Fire a burst of 10 concurrently, then check; repeat
-the burst if the check still shows a bounded (~6.7s) response rather
-than a fast one:
+**Trip the circuit open, and check it in the same breath.** The breaker
+needs ≥4 calls with a ≥50% failure ratio within a 10s window (per
+`architecture/resiliency.md`'s configured values). Firing exactly 4
+sequentially doesn't reliably work — each bounded call above already
+takes ~6.7–6.8s, so by the time a 4th sequential call fires, the
+sampling window has moved on. Concurrent firing is required, and even
+then the exact count needed to trip it in practice was timing-sensitive
+during this guide's own authoring — it took several bursts of 10–20
+concurrent requests before one finally pushed it over.
+
+There's a second, easy-to-miss timing trap on top of that: the breaker's
+`BreakDuration` is only 5s, so if the *check* call is fired as a separate
+step with any real delay after the tripping burst — including the
+few seconds it takes a person to read output and type the next command —
+it can land after the breaker has already reset to Half-Open. A
+Half-Open trial is a full, real network attempt: it takes the same bounded
+~6.7s as an ordinary failure and reopens the circuit on failure, making
+the breaker look like it never tripped at all even though it did. The
+fix is to fire the check **immediately**, in the same shell invocation as
+the burst, so it lands while the circuit is still definitively Open
+(fast rejection, no network attempt):
 
 ```
-$ for i in 1 2 3 4 5 6 7 8 9 10; do
+$ for i in $(seq 1 15); do
     curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5099/events \
       -H "Content-Type: application/json" \
       -d "{\"eventId\":\"evt-cb-trip-$i\",\"accountId\":\"acct-cb-demo\",\"type\":\"CREDIT\",\"amount\":10,\"currency\":\"USD\",\"eventTimestamp\":\"2026-07-16T09:00:00Z\"}" &
-  done; wait
-# all ten print 503
-```
-
-**Confirm the circuit is open** — the next call fails near-instantly,
-with no network attempt at all (compare to the ~6.7s bounded calls above):
-
-```
-$ time curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+  done
+  wait
+  time curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
     -d '{"eventId":"evt-cb-check","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
+# ... 15 lines of 503 from the burst ...
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
-real  0m0.450s   # near-instant — no network attempt, the circuit is open
+real  0m0.300s   # near-instant — no network attempt, the circuit is open
 ```
+
+If the immediate check still shows a bounded (~6.7s) response, the
+burst itself wasn't enough yet — repeat the whole burst-then-immediate-check
+block again, rather than checking again on its own after a pause.
 
 ## 6. Graceful Degradation
 
@@ -286,12 +303,12 @@ $ curl http://localhost:5099/events/evt-outage-nopersist
 # HTTP 404 — the failed submission above was never persisted
 
 $ curl http://localhost:5099/events/evt-idem-1
-{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:25:02.7567023+00:00"}
+{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:44:28.7886235+00:00"}
 # HTTP 200 — reads of existing, already-persisted data are entirely unaffected
 
 $ curl "http://localhost:5099/events?account=acct-verify-1"
-[{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:25:02.7567023+00:00"}]
-# HTTP 200 — same: local-only read, doesn't depend on the Account Service
+[{"eventId":"evt-idem-1","accountId":"acct-verify-1","type":"CREDIT","amount":200.0,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:44:28.7886235+00:00"}, ...]
+# HTTP 200 — same: local-only read, doesn't depend on the Account Service (abridged — the real response includes the out-of-order events from Section 1 too)
 
 $ curl http://localhost:5099/accounts/acct-verify-1/balance
 {"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
@@ -304,9 +321,9 @@ $ curl http://localhost:5099/accounts/acct-verify-1/balance
 $ docker compose start account-service
 $ sleep 8   # break duration (5s) + healthcheck settling time, with margin
 
-$ curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+$ time curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
     -d '{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
 
-{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:26:56.5007079+00:00"}
-real  0m0.978s   # HTTP 201 — the half-open trial call succeeded, circuit closed again
+{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:56:51.745628+00:00"}
+real  0m0.891s   # HTTP 201 — the half-open trial call succeeded, circuit closed again
 ```

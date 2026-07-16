@@ -47,6 +47,19 @@ window/throughput evaluation has enough timing sensitivity that a fixed
   the burst if the first one doesn't visibly trip it — don't hard-code
   an exact "N concurrent calls always trips it" expectation into
   documentation or tooling.
+- **The "check it tripped" probe itself is timing-sensitive against
+  `BreakDuration`, and a naive probe can make a genuinely-open circuit
+  look closed.** `BreakDuration` here is only 5s. A Half-Open trial call
+  is a full, real network attempt — if the dependency is still down it
+  takes the same bounded ~6.7s as an ordinary failure and reopens the
+  circuit, indistinguishable from "still Closed" by timing alone. If the
+  probe fires as a separate step some seconds after the tripping burst
+  (e.g. a person reading burst output before typing the next command, or
+  two separate tool-call round-trips in an agentic session), it can land
+  after the breaker has already reset to Half-Open and consume that
+  slot — making a circuit that DID trip look like it never did. Fire the
+  probe **immediately after the burst, in the same script/shell
+  invocation**, not as a separately-timed follow-up call.
 - This is not a bug in the circuit breaker configuration — it's an
   emergent interaction between two independently-reasonable settings
   (a multi-second bounded-failure latency, and a sampling window in the
