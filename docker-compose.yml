@@ -3,7 +3,7 @@ services:
     build:
       context: ./src/EventLedger.AccountService
     ports:
-      - "5199:8081"
+      - "127.0.0.1:5199:8081"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 5s
@@ -15,7 +15,7 @@ services:
     build:
       context: ./src/EventLedger.Gateway
     ports:
-      - "5099:8080"
+      - "127.0.0.1:5099:8080"
     environment:
       AccountService__BaseUrl: "http://account-service:8081"
     depends_on:
