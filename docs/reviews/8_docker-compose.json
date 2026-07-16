@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-16T14:15:00Z",
+    "branch": "8_docker-compose",
+    "commitSha": "c885f138a70491f4d439079a6fa1c25f212e0240",
+    "issue": 8,
+    "filesReviewed": [
+      "README.md",
+      "docker-compose.yml",
+      "docs/brainstorms/8_docker-compose-brainstorm.md",
+      "docs/plans/8_docker-compose-plan.md",
+      "docs/simplify-patterns.md",
+      "src/EventLedger.AccountService/.dockerignore",
+      "src/EventLedger.AccountService/Dockerfile",
+      "src/EventLedger.Gateway/.dockerignore",
+      "src/EventLedger.Gateway/Dockerfile"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "warning",
+      "file": "docker-compose.yml",
+      "line": 6,
+      "summary": "Account Service's (and Gateway's) port mapping binds to all host network interfaces, not just loopback, undermining the Account Service's documented internal-only invariant.",
+      "detail": "`ports: - \"5199:8081\"` (account-service, line 6) and `\"5099:8080\"` (gateway, line 18) omit a host-IP prefix, so Docker's default bind is `0.0.0.0:5199`/`0.0.0.0:5099` — reachable from any other machine on the same network as the host, not just localhost. architecture/vertical-architecture.md states the Account Service 'is internal-only — never called directly by a client, only by the Gateway.' A host on the same network segment could POST directly to the Account Service, mutating balances without ever touching the Gateway's event table or idempotency ledger. Binding explicitly to loopback (`\"127.0.0.1:5199:8081\"`, and for symmetry `\"127.0.0.1:5099:8080\"`) preserves local curl access while actually keeping exposure scoped to the host machine, matching the stated architecture rather than just the README's description of it as safe.",
+      "agent": "review-security",
+      "disposition": {"status": "addressed", "reasoning": "Prefixed both port mappings with 127.0.0.1, scoping exposure to the host machine only. Verified via docker compose config (host_ip confirmed) and a full up/curl/down cycle.", "commit": "ad3545b", "issue": null, "timestamp": "2026-07-16T14:30:00Z"}
+    },
+    {
+      "id": "F2",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/.dockerignore",
+      "line": 1,
+      "summary": "`.dockerignore` doesn't exclude local SQLite artifacts, so a developer's own gateway.db can get baked into the built image, contradicting the 'ephemeral storage' claim.",
+      "detail": "The README's manual-mode instructions have a developer run `dotnet run --project src/EventLedger.Gateway` in this same folder, creating gateway.db via EnsureCreated(). .gitignore excludes *.db/*.db-shm/*.db-wal from git, but .dockerignore only excludes bin/, obj/, and **/TestResults/ — Docker's build context reads straight off disk, not filtered through .gitignore. If `docker compose up --build` is later run in that same working copy, COPY . . in the build stage copies the stale gateway.db into the image. Because GatewayDbContext.Database.EnsureCreated() is a no-op when the target file already exists, the container silently starts on that stale database instead of a fresh one. Add *.db, *.db-shm, *.db-wal to both services' .dockerignore files, mirroring the existing .gitignore entries.",
+      "agent": "review-dotnet",
+      "disposition": {"status": "addressed", "reasoning": "Added *.db, *.db-shm, *.db-wal to .dockerignore, mirroring .gitignore. Verified empirically: rebuilt with a fake stale gateway.db present, confirmed via docker run --entrypoint sh that no .db file exists in the built image.", "commit": "c981d07", "issue": null, "timestamp": "2026-07-16T14:40:00Z"}
+    },
+    {
+      "id": "F3",
+      "severity": "warning",
+      "file": "src/EventLedger.AccountService/.dockerignore",
+      "line": 1,
+      "summary": "Same missing *.db/*.db-shm/*.db-wal exclusion as the Gateway's .dockerignore — stale accountservice.db can be baked into the image.",
+      "detail": "Identical issue to F2: AccountDbContext.Database.EnsureCreated() is also a no-op if accountservice.db already exists in the build context, so a locally-run `dotnet run --project src/EventLedger.AccountService` leaves a file that a subsequent `docker compose up --build` silently copies into the image and serves as-is.",
+      "agent": "review-dotnet",
+      "disposition": {"status": "addressed", "reasoning": "Added *.db, *.db-shm, *.db-wal to .dockerignore, mirroring .gitignore. Verified empirically: rebuilt with a fake stale accountservice.db present, confirmed via docker run --entrypoint sh that no .db file exists in the built image.", "commit": "c981d07", "issue": null, "timestamp": "2026-07-16T14:40:00Z"}
+    },
+    {
+      "id": "F4",
+      "severity": "suggestion",
+      "file": "src/EventLedger.Gateway/Dockerfile",
+      "line": 1,
+      "summary": "Base images are pinned to floating major-version tags (sdk:8.0, aspnet:8.0) rather than a specific patch version or digest, so rebuilds aren't reproducible over time.",
+      "detail": "Both Dockerfiles use mcr.microsoft.com/dotnet/sdk:8.0 and mcr.microsoft.com/dotnet/aspnet:8.0 — mutable tags that get re-pushed on every .NET 8 patch release, so a rebuild weeks apart can silently pull a different underlying image. Pinning to a specific patch tag (e.g. 8.0.11, matching the EF Core Sqlite package version already pinned in each .csproj) or a digest would make builds reproducible. Corroborated independently by review-security and review-dotnet. Low priority given this is a solo/local take-home with no CI to worry about drift on.",
+      "agent": "review-dotnet",
+      "corroboratedBy": ["review-security"],
+      "disposition": {"status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null}
+    },
+    {
+      "id": "F5",
+      "severity": "suggestion",
+      "file": "src/EventLedger.AccountService/Dockerfile",
+      "line": 8,
+      "summary": "Both containers run their dotnet process as root — no USER directive in either Dockerfile.",
+      "detail": "Neither Dockerfile adds a non-root USER before ENTRYPOINT, so both processes run as root inside their containers by default. At this system's local/single-operator scale the practical risk is low, but it's a standard, low-cost container-hardening step (RUN adduser + USER app, or the aspnet:8.0-provided non-root user) worth adopting since it costs only a couple of Dockerfile lines.",
+      "agent": "review-security",
+      "disposition": {"status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null}
+    },
+    {
+      "id": "F6",
+      "severity": "suggestion",
+      "file": "src/EventLedger.Gateway/Dockerfile",
+      "line": 6,
+      "summary": "dotnet publish re-runs an implicit restore even though dotnet restore already ran two lines earlier.",
+      "detail": "RUN dotnet restore (line 4) followed by RUN dotnet publish -c Release -o /app/publish (line 6) without --no-restore means publish performs its own implicit restore pass on top of the one already done. The explicit restore step exists purely for Docker layer caching, but the redundant work inside publish itself still costs build time on every build. Add --no-restore to the dotnet publish invocation in both Dockerfiles.",
+      "agent": "review-dotnet",
+      "disposition": {"status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null}
+    }
+  ],
+  "summary": {
+    "totalFindings": 6,
+    "critical": 0,
+    "warning": 3,
+    "suggestion": 3
+  }
+}
