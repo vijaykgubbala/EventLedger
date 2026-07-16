@@ -8,7 +8,7 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.AddGatewayInfrastructure();
+    builder.AddGatewayInfrastructure("EventGateway");
 
     var app = builder.Build();
 

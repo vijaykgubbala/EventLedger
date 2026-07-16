@@ -8,7 +8,7 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.AddAccountServiceInfrastructure();
+    builder.AddAccountServiceInfrastructure("AccountService");
 
     var app = builder.Build();
 
