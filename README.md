@@ -6,10 +6,10 @@ and duplicate event delivery, and to degrade gracefully when the Account
 Service is unavailable. Built against the requirements in
 [docs/Assignment - Senior Software Engineer - AI.docx](docs/Assignment%20-%20Senior%20Software%20Engineer%20-%20AI.docx).
 
-> **Status:** This repository currently contains architecture, governance,
-> standards, and Claude Code tooling only — application code is a
-> follow-up pass. Run/test commands below are stubbed with `TODO` until
-> that code exists.
+> **Status:** Application code, resiliency, and Docker Compose are
+> implemented. Setup prerequisites and the test-run command below are
+> still stubbed with `TODO` — see the "Running the services" section for
+> working startup commands.
 
 ## Architecture overview
 
@@ -126,13 +126,41 @@ the planned project scaffold).
 
 ## Running the services
 
-**TODO — Docker Compose:**
+### Docker Compose (preferred)
 
 ```
 docker compose up --build
 ```
 
-**TODO — manual:**
+Brings both services to a healthy state with no manual steps — the
+Gateway's container waits for the Account Service's own healthcheck to
+pass before starting (`depends_on: condition: service_healthy`), so
+there's no cold-start race to work around.
+
+- Event Gateway: `http://localhost:5099`
+- Account Service: `http://localhost:5199` (internal-only by design;
+  exposed here purely for local `curl`/debugging convenience)
+
+```
+curl http://localhost:5099/health
+curl http://localhost:5199/health
+```
+
+Stop and remove both containers:
+
+```
+docker compose down
+```
+
+SQLite storage is ephemeral — data does not persist across
+`docker compose down`/`up` cycles.
+
+### Manual (no Docker)
+
+Requires the .NET 8 SDK. Start the Account Service first, then the
+Gateway — the Gateway's `AccountService:BaseUrl` config
+(`http://localhost:5199` by default, in `appsettings.json`) expects it
+already listening:
 
 ```
 dotnet run --project src/EventLedger.AccountService

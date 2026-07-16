@@ -1,0 +1,29 @@
+services:
+  account-service:
+    build:
+      context: ./src/EventLedger.AccountService
+    ports:
+      - "127.0.0.1:5199:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  gateway:
+    build:
+      context: ./src/EventLedger.Gateway
+    ports:
+      - "127.0.0.1:5099:8080"
+    environment:
+      AccountService__BaseUrl: "http://account-service:8081"
+    depends_on:
+      account-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
