@@ -1,0 +1,191 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "timestamp": "2026-07-16T00:34:57Z",
+    "branch": "3_service-separation",
+    "baseBranch": "master",
+    "commitSha": "daf55e26755b900ef3bb4e7a8372d524b0529121",
+    "issue": 3,
+    "filesReviewed": [
+      "EventLedger.sln",
+      "src/EventLedger.Gateway/AppMarker.cs",
+      "src/EventLedger.Gateway/Controllers/HealthController.cs",
+      "src/EventLedger.Gateway/EventLedger.Gateway.csproj",
+      "src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.Gateway/Middleware/TraceLoggingMiddleware.cs",
+      "src/EventLedger.Gateway/Program.cs",
+      "src/EventLedger.Gateway/Properties/launchSettings.json",
+      "src/EventLedger.Gateway/appsettings.Development.json",
+      "src/EventLedger.Gateway/appsettings.json",
+      "src/EventLedger.AccountService/AppMarker.cs",
+      "src/EventLedger.AccountService/Controllers/HealthController.cs",
+      "src/EventLedger.AccountService/EventLedger.AccountService.csproj",
+      "src/EventLedger.AccountService/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.AccountService/Middleware/TraceLoggingMiddleware.cs",
+      "src/EventLedger.AccountService/Program.cs",
+      "src/EventLedger.AccountService/Properties/launchSettings.json",
+      "src/EventLedger.AccountService/appsettings.Development.json",
+      "src/EventLedger.AccountService/appsettings.json",
+      "tests/EventLedger.Gateway.Tests/AccountServiceBootTests.cs",
+      "tests/EventLedger.Gateway.Tests/AssemblyInfo.cs",
+      "tests/EventLedger.Gateway.Tests/EventLedger.Gateway.Tests.csproj",
+      "tests/EventLedger.Gateway.Tests/GatewayBootTests.cs",
+      "tests/EventLedger.Gateway.Tests/GatewayLoggingTests.cs",
+      "tests/EventLedger.Gateway.Tests/HealthControllerTests.cs",
+      "tests/EventLedger.AccountService.Tests/AccountServiceLoggingTests.cs",
+      "tests/EventLedger.AccountService.Tests/AssemblyInfo.cs",
+      "tests/EventLedger.AccountService.Tests/EventLedger.AccountService.Tests.csproj",
+      "tests/EventLedger.AccountService.Tests/HealthControllerTests.cs"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/appsettings.json",
+      "summary": "Logging:LogLevel in appsettings.json is dead configuration — Serilog never calls ReadFrom.Configuration, so it has zero effect.",
+      "detail": "Editing appsettings.json's Logging:LogLevel would silently do nothing since Log.Logger is built entirely in code. Same in EventLedger.AccountService and both appsettings.Development.json files.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Removed the misleading Logging:LogLevel section from all four appsettings*.json files rather than adding an undocumented ReadFrom.Configuration call — standards/logging-dotnet.md's snippet doesn't call for config-driven levels, so removing the dead section matches the documented standard instead of extending it.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F2",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Middleware/TraceLoggingMiddleware.cs",
+      "line": 12,
+      "summary": "Claimed: ASP.NET Core's built-in \"Request starting\"/\"Request finished\" hosting-diagnostics logs run outside this middleware's LogContext scope and won't carry TraceId.",
+      "detail": "The middleware-scope reasoning is correct in isolation (hosting diagnostics logs do run outside app.Use() middleware), but the conclusion is refuted by direct empirical test: captured log output shows the \"Request starting\" line (SourceContext: Microsoft.AspNetCore.Hosting.Diagnostics) DOES carry a real TraceId (e.g. \"cd32c3a6fc744b07a934bccc3fc4cde7\"). Serilog 3.x's LogEvent has native TraceId/SpanId fields sourced directly from Activity.Current, independent of LogContext.PushProperty — this covers the hosting-diagnostics logs regardless of custom middleware scope.",
+      "disposition": {
+        "status": "ignored",
+        "reasoning": "Verified false positive — re-ran a targeted diagnostic test against the actual running application and confirmed the hosting-diagnostics \"Request starting\" line already carries a correct, non-null TraceId via Serilog's built-in Activity-aware enrichment, not via this middleware. No code change needed; the described gap doesn't exist in practice.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F3",
+      "agent": "review-dotnet",
+      "severity": "suggestion",
+      "file": "src/EventLedger.Gateway/Program.cs",
+      "summary": "No try/catch/finally + Log.CloseAndFlush() around startup — a startup crash wouldn't be captured in the JSON log stream and buffered sink state wouldn't flush on shutdown.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Wrapped builder/app construction and app.Run() in try/catch(Exception)/finally with Log.Fatal + Log.CloseAndFlush(), matching the standard Serilog+ASP.NET Core bootstrap idiom, in both services.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F4",
+      "agent": "review-dotnet",
+      "severity": "suggestion",
+      "file": "standards/backend-architecture.md",
+      "summary": "Application/ and Domain/ folders from the documented repository tree aren't present in the commit — git doesn't track empty directories.",
+      "disposition": {
+        "status": "ignored",
+        "reasoning": "Deliberate, pre-existing decision (no .gitkeep placeholders, per this project's anti-cruft convention) — self-resolves the moment issue #2 adds the first file into either folder. Not a real gap.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F5",
+      "agent": "review-dotnet",
+      "severity": "suggestion",
+      "file": "src/EventLedger.Gateway/Properties/launchSettings.json",
+      "summary": "launchBrowser: true on API-only services with no browsable UI opens a browser tab to a bare JSON endpoint on every dotnet run.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Set launchBrowser to false across all profiles in both services' launchSettings.json.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F6",
+      "agent": "review-testing",
+      "severity": "warning",
+      "file": "tests/EventLedger.Gateway.Tests/GatewayLoggingTests.cs",
+      "summary": "Logging test hits GET / (unmapped, 404) instead of the now-existing GET /health — stale route choice never updated after Phase 4 added the real endpoint.",
+      "detail": "Same issue in AccountServiceLoggingTests.cs.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Changed both logging tests to hit /health instead of /.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F7",
+      "agent": "review-testing",
+      "severity": "warning",
+      "file": "tests/EventLedger.Gateway.Tests/GatewayBootTests.cs",
+      "summary": "Assert.NotNull(response) is always true for a completed HTTP call (failures throw, not return null) — the assertion adds no real signal beyond \"the call didn't throw\".",
+      "detail": "Same issue in AccountServiceBootTests.cs.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Changed both boot tests to assert response.IsSuccessStatusCode with a descriptive failure message.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F8",
+      "agent": "review-testing",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/GatewayLoggingTests.cs",
+      "summary": "JSON log line validated via substring Contains/regex rather than parsing as JSON and asserting individual properties.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Rewrote both logging tests to JsonDocument.Parse the matched line and assert on RootElement.GetProperty(\"TraceId\") and Properties.GetProperty(\"ServiceName\") directly, applied together with the F6 route fix.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    },
+    {
+      "id": "F9",
+      "agent": "review-maintainability",
+      "severity": "suggestion",
+      "file": "architecture/observability.md",
+      "line": 52,
+      "summary": "GET /health's DB-connectivity contract is temporarily unmet by this scaffold, and that gap is tracked only in docs/plans/, not in architecture/ itself — architecture-advisor only reads architecture/, so it would treat the fuller contract as already true.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Added a sequencing note directly in architecture/observability.md's Health checks section, explaining the temporary gap and pointing to issue #5, so architecture-advisor (which only reads architecture/) doesn't treat the full contract as already implemented.",
+        "commit": null,
+        "issue": null,
+        "timestamp": "2026-07-16T00:34:57Z"
+      }
+    }
+  ],
+  "summary": {
+    "totalFindings": 9,
+    "bySeverity": {
+      "critical": 0,
+      "warning": 4,
+      "suggestion": 5
+    },
+    "byDisposition": {
+      "pending": 0,
+      "addressed": 7,
+      "ignored": 2,
+      "deferred": 0
+    }
+  }
+}

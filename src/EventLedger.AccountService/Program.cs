@@ -2,21 +2,26 @@ using EventLedger.AccountService.Infrastructure;
 using EventLedger.AccountService.Middleware;
 using Serilog;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("ServiceName", "AccountService")
-    .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter())
-    .CreateLogger();
+ServiceCollectionExtensions.BootstrapLogging("AccountService");
 
-var builder = WebApplication.CreateBuilder(args);
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog();
-builder.AddAccountServiceInfrastructure();
-builder.Services.AddControllers();
+    builder.AddAccountServiceInfrastructure();
 
-var app = builder.Build();
+    var app = builder.Build();
 
-app.UseTraceLogging();
-app.MapControllers();
+    app.UseTraceLogging();
+    app.MapControllers();
 
-app.Run();
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "AccountService terminated unexpectedly during startup");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

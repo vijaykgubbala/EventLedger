@@ -2,21 +2,26 @@ using EventLedger.Gateway.Infrastructure;
 using EventLedger.Gateway.Middleware;
 using Serilog;
 
-Log.Logger = new LoggerConfiguration()
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("ServiceName", "EventGateway")
-    .WriteTo.Console(new Serilog.Formatting.Json.JsonFormatter())
-    .CreateLogger();
+ServiceCollectionExtensions.BootstrapLogging("EventGateway");
 
-var builder = WebApplication.CreateBuilder(args);
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseSerilog();
-builder.AddGatewayInfrastructure();
-builder.Services.AddControllers();
+    builder.AddGatewayInfrastructure();
 
-var app = builder.Build();
+    var app = builder.Build();
 
-app.UseTraceLogging();
-app.MapControllers();
+    app.UseTraceLogging();
+    app.MapControllers();
 
-app.Run();
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "EventGateway terminated unexpectedly during startup");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

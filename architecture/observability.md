@@ -51,7 +51,19 @@ viewer.
 
 `GET /health` on both services returns service status and a basic
 diagnostic: database connectivity (a trivial query against the local
-SQLite file). The Gateway's `/health` does **not** block on Account Service
+SQLite file).
+
+> **Sequencing note:** issue #3 (Service separation) ships `/health` as a
+> trivial `{"status": "ok"}` placeholder, with no DB-connectivity check yet
+> — deliberate and temporary, since no `DbContext` exists until issue #2.
+> Issue #5 (Observability) upgrades the same route in place to match the
+> full contract below. See that story's plan (`docs/plans/`) for the
+> tracked gap. Noted here, not just in `docs/plans/`, so a reader of this
+> file alone — including the `architecture-advisor` agent, which only
+> reads `architecture/` — doesn't take the full contract as already true
+> before it is.
+
+The Gateway's `/health` does **not** block on Account Service
 reachability — a health check must answer quickly from local state, not
 depend on a downstream service that might itself be degraded. (Account
 Service reachability from the Gateway's perspective is instead surfaced by

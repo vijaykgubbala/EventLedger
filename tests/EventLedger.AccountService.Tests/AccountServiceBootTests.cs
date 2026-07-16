@@ -12,6 +12,6 @@ public class AccountServiceBootTests
 
         var response = await client.GetAsync("/health");
 
-        Assert.NotNull(response);
+        Assert.True(response.IsSuccessStatusCode, $"Expected a success status code, got {response.StatusCode}");
     }
 }
