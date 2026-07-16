@@ -59,7 +59,7 @@ already exists and is correct) — every change is test-only or docs-only.
 
 ### Phase 2: Update the review-testing.md checklist doc
 
-- [ ] Update `.claude/agents/review-testing.md`'s "Required checklist"
+- [x] Update `.claude/agents/review-testing.md`'s "Required checklist"
   item 4 (currently lines 25-27) to name the malformed-`eventTimestamp`
   case explicitly, alongside the 3 cases already listed (missing required
   field, `amount <= 0`, invalid `type`) — closes the doc/reality mismatch

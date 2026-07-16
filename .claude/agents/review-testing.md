@@ -23,8 +23,9 @@ below; don't flag generic coverage gaps that fall outside it.
    `SUM(CREDIT) − SUM(DEBIT)` over a mixed set of transactions, including
    an edge case (zero transactions, all-credit, all-debit).
 4. **Validation** — tests covering: missing required field, `amount <= 0`,
-   an unknown/invalid `type` value, each asserting `400` and a meaningful
-   error body per [standards/api.md](../../standards/api.md).
+   an unknown/invalid `type` value, and a malformed `eventTimestamp`
+   (present but not a valid ISO 8601 timestamp), each asserting `400`
+   and a meaningful error body per [standards/api.md](../../standards/api.md).
 5. **Resiliency behavior** — a test that simulates the Account Service
    failing (unreachable, erroring, or slow past the configured timeout)
    and asserts the Gateway's circuit breaker opens under sustained
