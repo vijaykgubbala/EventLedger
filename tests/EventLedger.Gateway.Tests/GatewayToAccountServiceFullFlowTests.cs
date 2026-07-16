@@ -2,7 +2,6 @@ extern alias AccountServiceAssembly;
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using EventLedger.Gateway.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -35,52 +34,45 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
         }
     }
 
+    private void ConfigureAccountServiceDb(IServiceCollection services)
+    {
+        services.RemoveAll<DbContextOptions<AccountServiceDbContext>>();
+        services.AddDbContext<AccountServiceDbContext>(opt => opt.UseSqlite($"Data Source={_accountDbPath}"));
+    }
+
+    private void ConfigureGatewayDb(IServiceCollection services)
+    {
+        services.RemoveAll<DbContextOptions<GatewayDbContext>>();
+        services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_gatewayFixture.ConnectionString));
+    }
+
     private (WebApplicationFactory<AccountServiceProgram> accountService, WebApplicationFactory<Program> gateway) CreateFactories()
     {
-        var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>().WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<DbContextOptions<AccountServiceDbContext>>();
-                services.AddDbContext<AccountServiceDbContext>(opt => opt.UseSqlite($"Data Source={_accountDbPath}"));
-            });
-        });
+        var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>()
+            .WithWebHostBuilder(builder => builder.ConfigureServices(ConfigureAccountServiceDb));
 
         var gatewayFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<DbContextOptions<GatewayDbContext>>();
-                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_gatewayFixture.ConnectionString));
-
+                ConfigureGatewayDb(services);
                 services.AddHttpClient("AccountService")
                     .ConfigurePrimaryHttpMessageHandler(() => accountServiceFactory.Server.CreateHandler());
-            });
-        });
+            }));
 
         return (accountServiceFactory, gatewayFactory);
     }
 
-    // TestServer.CreateHandler() (used by CreateFactories() above) substitutes a custom
-    // primary HttpMessageHandler, which bypasses System.Net.Http.DiagnosticsHandler — the
-    // component that actually injects the traceparent header, living inside SocketsHttpHandler
-    // itself rather than as a separately composable layer. Confirmed empirically: no
-    // traceparent header ever reaches the Account Service via CreateFactories()'s wiring,
-    // regardless of OpenTelemetry registration. A genuine socket-level call is the only way to
-    // observe real header injection, so this helper starts the Account Service on a real,
-    // dynamically-assigned Kestrel port and lets the Gateway's HttpClient use its real, default
-    // SocketsHttpHandler (no ConfigurePrimaryHttpMessageHandler override) to reach it.
+    // TestServer.CreateHandler() (used by CreateFactories() above) bypasses the component that
+    // actually injects the traceparent header, so this helper uses a real, dynamically-assigned
+    // Kestrel port instead, letting the Gateway's HttpClient keep its real SocketsHttpHandler.
+    // See docs/patterns/2026-07-15-diagnosticshandler-bypassed-by-custom-httpmessagehandler.md.
     private (WebApplicationFactory<AccountServiceProgram> accountService, WebApplicationFactory<Program> gateway) CreateFactoriesWithRealNetworking()
     {
         var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>().WithWebHostBuilder(builder =>
         {
             builder.UseKestrel();
             builder.UseUrls("http://127.0.0.1:0");
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<DbContextOptions<AccountServiceDbContext>>();
-                services.AddDbContext<AccountServiceDbContext>(opt => opt.UseSqlite($"Data Source={_accountDbPath}"));
-            });
+            builder.ConfigureServices(ConfigureAccountServiceDb);
         });
 
         // Accessing .Services forces the host (including Kestrel) to start listening, so the
@@ -89,18 +81,12 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
         var realAddress = server.Features.Get<IServerAddressesFeature>()!.Addresses.First();
 
         var gatewayFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<DbContextOptions<GatewayDbContext>>();
-                services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(_gatewayFixture.ConnectionString));
-
-                // Overrides only the BaseAddress the existing "AccountService" client
-                // registration (from AddGatewayInfrastructure()) resolves to — the client
-                // keeps its real, default SocketsHttpHandler.
+                ConfigureGatewayDb(services);
+                // Only the BaseAddress changes — the client keeps its real SocketsHttpHandler.
                 services.AddHttpClient("AccountService", client => client.BaseAddress = new Uri(realAddress));
-            });
-        });
+            }));
 
         return (accountServiceFactory, gatewayFactory);
     }
@@ -112,11 +98,7 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
         await using var accountServiceFactory = factories.accountService;
         await using var gatewayFactory = factories.gateway;
 
-        var originalOut = Console.Out;
-        var capturedOutput = new StringWriter();
-        Console.SetOut(capturedOutput);
-
-        try
+        var output = await ConsoleLogCapture.CaptureAsync(async () =>
         {
             using var client = gatewayFactory.CreateClient();
             await client.PostAsJsonAsync("/events", new
@@ -128,24 +110,15 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
                 currency = "USD",
                 eventTimestamp = "2026-05-15T14:02:11Z"
             });
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
+        });
 
-        // Assert TraceId equality only, not per-line ServiceName — BootstrapLogging(serviceName)
-        // reassigns Serilog's process-wide static Log.Logger, and when both services boot in one
-        // xUnit process, whichever service's BootstrapLogging call runs last (the Account
-        // Service, since it boots on first use) can make later Gateway-side log lines carry the
-        // wrong ServiceName. TraceId itself, pushed via LogContext.PushProperty (AsyncLocal-
-        // scoped), is unaffected. This is a recognized test-environment-only artifact of running
-        // two independently-BootstrapLogging'd apps in one process — not a production concern,
-        // since real deployments run each service in its own OS process.
-        var traceIds = capturedOutput.ToString()
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Where(line => line.TrimStart().StartsWith('{') && line.Contains("TraceId"))
-            .Select(line => JsonDocument.Parse(line).RootElement.GetProperty("TraceId").GetString())
+        // Asserts TraceId equality only, not per-line ServiceName — BootstrapLogging(serviceName)
+        // reassigns Serilog's process-wide static Log.Logger, so whichever service boots last in
+        // this dual-in-process test can make earlier lines carry the wrong ServiceName. TraceId
+        // itself (AsyncLocal-scoped via LogContext) is unaffected — this is a test-environment-
+        // only artifact, not a production concern (real deployments are separate OS processes).
+        var traceIds = ConsoleLogCapture.ParseLogLinesWithTraceId(output)
+            .Select(line => line.GetProperty("TraceId").GetString())
             .Distinct()
             .ToList();
 
