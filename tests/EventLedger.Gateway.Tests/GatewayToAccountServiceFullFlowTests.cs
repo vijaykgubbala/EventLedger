@@ -31,10 +31,9 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task PostEvents_FullFlowThroughRealAccountService_AppliesTransactionAndPersistsInBothServices()
+    private (WebApplicationFactory<AccountServiceProgram> accountService, WebApplicationFactory<Program> gateway) CreateFactories()
     {
-        await using var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>().WithWebHostBuilder(builder =>
+        var accountServiceFactory = new WebApplicationFactory<AccountServiceProgram>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {
@@ -43,7 +42,7 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
             });
         });
 
-        await using var gatewayFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        var gatewayFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {
@@ -54,6 +53,16 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
                     .ConfigurePrimaryHttpMessageHandler(() => accountServiceFactory.Server.CreateHandler());
             });
         });
+
+        return (accountServiceFactory, gatewayFactory);
+    }
+
+    [Fact]
+    public async Task PostEvents_FullFlowThroughRealAccountService_AppliesTransactionAndPersistsInBothServices()
+    {
+        var factories = CreateFactories();
+        await using var accountServiceFactory = factories.accountService;
+        await using var gatewayFactory = factories.gateway;
 
         using var client = gatewayFactory.CreateClient();
 
@@ -79,5 +88,28 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
         var gatewayDb = gatewayScope.ServiceProvider.GetRequiredService<GatewayDbContext>();
         var stored = await gatewayDb.Events.SingleAsync(e => e.EventId == "evt-e2e-1");
         Assert.Equal("acct-e2e-1", stored.AccountId);
+    }
+
+    [Fact]
+    public async Task PostEvents_MixedTransactionsSubmittedOutOfEventTimestampOrder_ResultingBalanceIsCorrect()
+    {
+        var factories = CreateFactories();
+        await using var accountServiceFactory = factories.accountService;
+        await using var gatewayFactory = factories.gateway;
+
+        using var client = gatewayFactory.CreateClient();
+
+        // Submitted in this arrival order, but eventTimestamp order is: debit (05-10), credit-a (05-12), credit-b (05-15).
+        // Balance is a plain SUM, so it must come out the same (100 + 40 - 30 = 110) regardless of arrival order.
+        await client.PostAsJsonAsync("/events", new { eventId = "evt-order-1", accountId = "acct-order-1", type = "CREDIT", amount = 100m, currency = "USD", eventTimestamp = "2026-05-15T00:00:00Z" });
+        await client.PostAsJsonAsync("/events", new { eventId = "evt-order-2", accountId = "acct-order-1", type = "DEBIT", amount = 30m, currency = "USD", eventTimestamp = "2026-05-10T00:00:00Z" });
+        await client.PostAsJsonAsync("/events", new { eventId = "evt-order-3", accountId = "acct-order-1", type = "CREDIT", amount = 40m, currency = "USD", eventTimestamp = "2026-05-12T00:00:00Z" });
+
+        using var accountServiceScope = accountServiceFactory.Services.CreateScope();
+        var balanceHandler = accountServiceScope.ServiceProvider
+            .GetRequiredService<AccountServiceAssembly::EventLedger.AccountService.Application.BalanceQueryHandler>();
+        var balance = await balanceHandler.GetBalanceAsync("acct-order-1");
+
+        Assert.Equal(110m, balance);
     }
 }

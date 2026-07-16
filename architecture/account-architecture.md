@@ -24,7 +24,11 @@ and balance-computation decisions it implements.
 | `GET` | `/health` | See [observability.md](observability.md) |
 
 Request/response shapes and status codes are defined in
-[standards/api.md](../standards/api.md).
+[standards/api.md](../standards/api.md). Both `GET` endpoints above always
+return `200` — since an account is an implicit identity with no stored
+`accounts` table, there's no way to distinguish "never existed" from "zero
+transactions," and zero transactions is a valid, non-error state (balance
+`0`, empty transaction list).
 
 ## `POST /accounts/{accountId}/transactions` flow
 

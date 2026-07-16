@@ -67,6 +67,32 @@ public class EventsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task PostEvents_MissingRequiredField_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/events", new { accountId = "acct-1", type = "CREDIT", amount = 100m, currency = "USD", eventTimestamp = "2026-05-15T14:02:11Z" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("validation_error", body!.Error);
+    }
+
+    [Fact]
+    public async Task PostEvents_InvalidType_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/events", new { eventId = "evt-invalid-type", accountId = "acct-1", type = "PAYMENT", amount = 100m, currency = "USD", eventTimestamp = "2026-05-15T14:02:11Z" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("validation_error", body!.Error);
+    }
+
+    [Fact]
     public async Task GetEventById_ExistingId_Returns200WithRecord()
     {
         using var factory = CreateFactory();

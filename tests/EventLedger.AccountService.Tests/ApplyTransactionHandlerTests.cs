@@ -45,10 +45,15 @@ public class ApplyTransactionHandlerTests : IDisposable
         }
 
         using var db = CreateContext();
+        var balanceBefore = await new BalanceQueryHandler(db).GetBalanceAsync("acct-1");
+
         var result = await CreateHandler(db).ApplyAsync("evt-2", "acct-1", TransactionType.Credit, 100m);
 
         Assert.Equal(ApplyTransactionOutcome.Duplicate, result.Outcome);
         Assert.Equal(1, await db.Transactions.CountAsync(t => t.EventId == "evt-2"));
+
+        var balanceAfter = await new BalanceQueryHandler(db).GetBalanceAsync("acct-1");
+        Assert.Equal(balanceBefore, balanceAfter);
     }
 
     [Fact]

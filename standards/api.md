@@ -16,9 +16,18 @@ implement.
 | Duplicate `eventId` recognized — original record returned | `200 OK` | Both `POST` endpoints |
 | Successful read | `200 OK` | All `GET` endpoints |
 | Request body fails validation (missing field, `amount <= 0`, unknown `type`) | `400 Bad Request` | `POST /events` |
-| Requested resource does not exist | `404 Not Found` | `GET /events/{id}`, `GET /accounts/{id}`, `GET /accounts/{id}/balance` |
+| Requested resource does not exist | `404 Not Found` | `GET /events/{id}` only |
 | Account Service unreachable, timed out, or circuit open | `503 Service Unavailable` | Gateway only: `POST /events`, balance-related reads |
 | Unhandled server-side fault | `500 Internal Server Error` | Any endpoint — should be rare; an Account Service outage is `503`, not `500` |
+
+**`GET /accounts/{id}` and `GET /accounts/{id}/balance` never return `404`.**
+An account is an implicit identity with no stored `accounts` table (see
+[../standards/naming.md](naming.md)), so there is no way to distinguish
+"account never existed" from "account exists with zero transactions" — both
+endpoints return `200` for any syntactically valid `accountId`, with
+balance `0` and an empty transaction list if nothing has been applied to
+it yet. See
+[../architecture/account-architecture.md](../architecture/account-architecture.md#endpoints).
 
 **A recognized duplicate `eventId` is never `409 Conflict`.** See
 [../architecture/vertical-architecture.md](../architecture/vertical-architecture.md#core-decision-idempotency-via-db-level-unique-constraint)

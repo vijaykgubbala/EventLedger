@@ -7,11 +7,12 @@ namespace EventLedger.Gateway.Application;
 public sealed class EventQueryHandler(GatewayDbContext db)
 {
     public Task<EventRecord?> GetByIdAsync(string eventId, CancellationToken cancellationToken = default) =>
-        db.Events.SingleOrDefaultAsync(e => e.EventId == eventId, cancellationToken);
+        db.Events.AsNoTracking().SingleOrDefaultAsync(e => e.EventId == eventId, cancellationToken);
 
     public async Task<IReadOnlyList<EventRecord>> ListByAccountAsync(string accountId, CancellationToken cancellationToken = default)
     {
         var events = await db.Events
+            .AsNoTracking()
             .Where(e => e.AccountId == accountId)
             .ToListAsync(cancellationToken);
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EventLedger.Gateway.Application;
 
 namespace EventLedger.Gateway.Tests;
@@ -62,5 +63,37 @@ public class EventValidatorTests
         var failures = _validator.Validate(eventId, accountId, type, amount, currency, eventTimestamp);
 
         Assert.Empty(failures);
+    }
+
+    [Fact]
+    public void Validate_MetadataPresentButNotAnObject_Fails()
+    {
+        var (eventId, accountId, type, amount, currency, eventTimestamp) = ValidPayload();
+        var metadata = JsonSerializer.SerializeToElement("not an object");
+
+        var failures = _validator.Validate(eventId, accountId, type, amount, currency, eventTimestamp, metadata);
+
+        Assert.Contains(failures, f => f.Field == "metadata");
+    }
+
+    [Fact]
+    public void Validate_MetadataIsAnObject_NoMetadataFailure()
+    {
+        var (eventId, accountId, type, amount, currency, eventTimestamp) = ValidPayload();
+        var metadata = JsonSerializer.SerializeToElement(new { source = "test" });
+
+        var failures = _validator.Validate(eventId, accountId, type, amount, currency, eventTimestamp, metadata);
+
+        Assert.DoesNotContain(failures, f => f.Field == "metadata");
+    }
+
+    [Fact]
+    public void Validate_MetadataAbsent_NoMetadataFailure()
+    {
+        var (eventId, accountId, type, amount, currency, eventTimestamp) = ValidPayload();
+
+        var failures = _validator.Validate(eventId, accountId, type, amount, currency, eventTimestamp, metadata: null);
+
+        Assert.DoesNotContain(failures, f => f.Field == "metadata");
     }
 }

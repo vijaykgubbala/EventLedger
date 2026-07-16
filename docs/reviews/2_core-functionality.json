@@ -1,0 +1,166 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "timestamp": "2026-07-15T00:00:00Z",
+    "branch": "2_core-functionality",
+    "baseBranch": "master",
+    "commitSha": "ef36ee8e436f1dcd54f5f9f6d2c9fb649da257f1",
+    "issue": 2,
+    "filesReviewed": [
+      "src/EventLedger.AccountService/Controllers/AccountsController.cs",
+      "src/EventLedger.AccountService/Controllers/ApplyTransactionRequest.cs",
+      "src/EventLedger.AccountService/Application/ApplyTransactionHandler.cs",
+      "src/EventLedger.AccountService/Application/BalanceQueryHandler.cs",
+      "src/EventLedger.AccountService/Application/AccountDetailsHandler.cs",
+      "src/EventLedger.Gateway/Controllers/EventsController.cs",
+      "src/EventLedger.Gateway/Controllers/SubmitEventRequest.cs",
+      "src/EventLedger.Gateway/Application/EventValidator.cs",
+      "src/EventLedger.Gateway/Application/SubmitEventHandler.cs",
+      "src/EventLedger.Gateway/Application/EventQueryHandler.cs",
+      "standards/api.md",
+      "architecture/account-architecture.md"
+    ]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "agent": "review-security, review-dotnet, review-correctness (corroborated)",
+      "severity": "critical",
+      "file": "src/EventLedger.AccountService/Controllers/AccountsController.cs",
+      "line": 18,
+      "summary": "AccountsController.ApplyTransaction dereferences unvalidated request.Type/request.Amount with null-forgiving operators, crashing with an unhandled exception (and, in the default Development environment, leaking a full stack trace) instead of returning a structured 400.",
+      "detail": "A POST to /accounts/{accountId}/transactions with a body missing `type` or `amount` hits `TransactionTypeExtensions.ParseWireString(request.Type!)` (line 18, throws ArgumentOutOfRangeException on null) or `request.Amount!.Value` (line 21, throws InvalidOperationException on null) before any database call, so the documented DB CHECK-constraint backstop never engages. No global exception-handling middleware exists in either service (only TraceLoggingMiddleware, which just logs and calls next()), so this surfaces as ASP.NET Core's default unhandled-exception response rather than the {error, message, details} shape standards/api.md requires. Both services' launchSettings.json set ASPNETCORE_ENVIRONMENT=Development for every launch profile, which auto-enables the Developer Exception Page, returning the full stack trace and internal file paths to the caller. Trivially reachable with one malformed HTTP request directly to the internal endpoint (bypassing the Gateway's EventValidator), no auth required.",
+      "disposition": { "status": "addressed", "reasoning": "Added a well-formedness-only guard (missing eventId/amount, or type outside CREDIT/DEBIT) returning 400 {error: \"validation_error\", ...} before any dereference, matching EventsController's validate-before-dereference pattern. Not a full business-rule validator — amount>0 stays the DB CHECK's job. Three new tests confirmed red (500) before the fix, green after.", "commit": "1cb1749", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
+    },
+    {
+      "id": "F2",
+      "agent": "review-correctness",
+      "severity": "warning",
+      "file": "src/EventLedger.AccountService/Controllers/AccountsController.cs",
+      "line": 18,
+      "summary": "A request with a null eventId bypasses the Account Service's independent idempotency guarantee, since SQLite's UNIQUE index treats every NULL as distinct.",
+      "detail": "ApplyTransaction passes request.EventId! straight into ApplyTransactionHandler.ApplyAsync with no null/empty check. Repeated calls with a missing eventId each successfully INSERT a new row instead of hitting the UNIQUE-constraint path — the guarantee standards/service-boundaries.md describes as making the Account Service 'safely retryable independent of anything the Gateway does' silently does not apply to this input. Unreachable through the Gateway (EventValidator rejects a missing eventId first) but reachable by any other direct caller.",
+      "disposition": { "status": "addressed", "reasoning": "Fixed as a side effect of F1's guard: a missing/whitespace eventId is now rejected with 400 before reaching ApplyTransactionHandler, so it can no longer bypass the UNIQUE-constraint idempotency guarantee.", "commit": "1cb1749", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
+    },
+    {
+      "id": "F3",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Application/EventQueryHandler.cs",
+      "line": 9,
+      "summary": "Read-only EF Core queries across both services don't use AsNoTracking(), wasting change-tracking overhead on every GET request.",
+      "detail": "EventQueryHandler.GetByIdAsync/ListByAccountAsync, BalanceQueryHandler.GetBalanceAsync, and AccountDetailsHandler.GetDetailsAsync are pure read paths with no subsequent SaveChangesAsync, yet none call .AsNoTracking(). EF Core's default change tracking snapshots every returned entity for later diffing — wasted work on every GET /events/{id}, GET /events?account=..., GET /accounts/{id}/balance, and GET /accounts/{id} request.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F4",
+      "agent": "review-dotnet",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Application/SubmitEventHandler.cs",
+      "line": 37,
+      "summary": "HttpResponseMessage returned from client.PostAsJsonAsync is never disposed.",
+      "detail": "response = await client.PostAsJsonAsync(...) assigns an IDisposable HttpResponseMessage that is read only via .IsSuccessStatusCode/.StatusCode and never wrapped in using or disposed on either the success or failure path. Its Content stream stays open until GC finalization rather than released deterministically.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F5",
+      "agent": "review-maintainability",
+      "severity": "warning",
+      "file": "standards/api.md",
+      "line": 19,
+      "summary": "standards/api.md's status-code table still lists 404 for GET /accounts/{id} and GET /accounts/{id}/balance, but the delivered code deliberately never returns 404 from either endpoint.",
+      "detail": "AccountsController's GetBalance and GetAccount always return 200 (balance 0 / empty transaction list for any accountId with no rows) — a deliberate Phase 6 decision recorded in docs/plans/2_core-functionality-plan.md, since accountId is an implicit, non-stored identity with no way to distinguish 'never existed' from 'zero transactions.' standards/api.md and architecture/account-architecture.md were not updated to reflect this in the same change.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F6",
+      "agent": "review-maintainability",
+      "severity": "warning",
+      "file": "src/EventLedger.AccountService/Application/AccountDetailsHandler.cs",
+      "line": 16,
+      "summary": "The balance formula (SUM(CREDIT) - SUM(DEBIT)) is implemented twice within the Account Service — once in BalanceQueryHandler, once independently in AccountDetailsHandler.",
+      "detail": "Both handlers independently write `t.Type == TransactionType.Credit ? t.Amount : -t.Amount` summed over the account's rows. The plan's Phase 3 text says AccountDetailsHandler reuses BalanceQueryHandler, but the delivered code re-derives the sum from its own already-materialized list instead (avoiding a second DB round trip, per the /simplify efficiency fix). This system's most important business invariant is now expressed in two places that must be kept in sync by hand.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F7",
+      "agent": "review-testing",
+      "severity": "warning",
+      "file": "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs",
+      "summary": "Only one of the three required validation categories is asserted at the HTTP/controller level (400 + error body) — missing-field and invalid-type are only unit-tested against EventValidator, never through the actual HTTP boundary.",
+      "detail": "EventValidatorTests.cs covers all three categories (missing field, amount<=0, invalid type) at the unit level. EventsControllerTests.cs has exactly one integration-level 400 test, covering only amount<=0. No controller-level test asserts 400 + {error, message, details} for a missing required field or an invalid type value.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F8",
+      "agent": "review-testing",
+      "severity": "warning",
+      "file": "tests/EventLedger.Gateway.Tests/SubmitEventHandlerTests.cs",
+      "summary": "No test explicitly asserts balance is unchanged after a duplicate eventId submission.",
+      "detail": "Existing duplicate-eventId tests check row count == 1 and that the original record is returned, but none call GetBalanceAsync/GET /accounts/{id}/balance afterward to explicitly confirm the balance did not change (e.g. was not double-counted) as a result of the duplicate submission.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F9",
+      "agent": "review-testing",
+      "severity": "warning",
+      "file": "none",
+      "summary": "No test combines out-of-order eventTimestamp submission with a balance-correctness assertion.",
+      "detail": "Ordering is fully covered (GetEventsByAccount_ReturnsArrayOrderedAscendingByEventTimestamp, ListByAccountAsync_MultipleEventsOutOfArrivalOrder...). SubmitAsync_OutOfOrderEventTimestampsAcrossMultipleEvents_AllApplySuccessfully submits out-of-order timestamps but only asserts row count, never queries the resulting balance.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F10",
+      "agent": "review-testing",
+      "severity": "warning",
+      "file": "tests/EventLedger.AccountService.Tests/BalanceQueryHandlerTests.cs",
+      "summary": "Missing explicit all-credit and all-debit edge cases for balance computation.",
+      "detail": "BalanceQueryHandlerTests.cs covers mixed and zero-transaction cases, but no test has only CREDIT or only DEBIT transactions for an account (e.g. asserting an all-debit set produces a correct negative balance).",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F11",
+      "agent": "review-testing",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
+      "summary": "The one real full-flow test only covers the happy-path create case, not a duplicate resubmission through the real two-service wiring.",
+      "detail": "Beyond the checklist minimum (met), driving a duplicate eventId resubmission through the real Gateway+AccountService wiring would exercise a scenario the mocked-handler unit tests can't observe: the Account Service's own duplicate-detection path triggered by a real second Gateway call.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F12",
+      "agent": "review-security",
+      "severity": "suggestion",
+      "file": "src/EventLedger.Gateway/Application/EventValidator.cs",
+      "line": 47,
+      "summary": "EventValidator never checks that metadata, when present, is actually a JSON object.",
+      "detail": "standards/api.md requires metadata to be a JSON object when present. A payload with \"metadata\": \"just a string\" or 42 is silently accepted and stored as opaque text rather than rejected with 400. No injection/executable-content risk — spec-conformance gap only.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F13",
+      "agent": "review-maintainability",
+      "severity": "suggestion",
+      "file": "src/EventLedger.AccountService/Controllers/ApplyTransactionRequest.cs",
+      "line": 3,
+      "summary": "ApplyTransactionRequest.AccountId is bound from the request body but never read — the controller always uses the route's accountId instead.",
+      "detail": "Harmless today, but invites a future bug where someone reads request.AccountId by mistake while the actual value in use is the route parameter. account-architecture.md already documents accountId as coming from the route, not the body.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    },
+    {
+      "id": "F14",
+      "agent": "review-maintainability",
+      "severity": "suggestion",
+      "file": "src/EventLedger.Gateway/Controllers/EventsController.cs",
+      "line": 28,
+      "summary": "Wire-string-to-domain-type parsing executes directly in Controllers/ in both services, not Application/, per backend-architecture.md's file-placement table.",
+      "detail": "Low-risk today since the Gateway's parse is guaranteed to succeed by prior EventValidator validation, but the Account Service's equivalent (AccountsController.cs:18) is exactly what F1 flags as unguarded. Moving ParseWireString into SubmitEventHandler/ApplyTransactionHandler (Application/) and passing the raw wire string in would also close F1's crash path.",
+      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+    }
+  ],
+  "summary": {
+    "totalFindings": 14,
+    "bySeverity": { "critical": 1, "warning": 9, "suggestion": 4 },
+    "byDisposition": { "pending": 14, "addressed": 0, "ignored": 0, "deferred": 0 }
+  }
+}

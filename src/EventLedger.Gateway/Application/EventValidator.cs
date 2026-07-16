@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 
 namespace EventLedger.Gateway.Application;
 
@@ -10,7 +11,8 @@ public sealed class EventValidator
         string? type,
         decimal? amount,
         string? currency,
-        string? eventTimestamp)
+        string? eventTimestamp,
+        JsonElement? metadata = null)
     {
         var failures = new List<ValidationFailure>();
 
@@ -47,6 +49,11 @@ public sealed class EventValidator
             !DateTimeOffset.TryParse(eventTimestamp, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
         {
             failures.Add(new ValidationFailure("eventTimestamp", "eventTimestamp must be a valid ISO 8601 timestamp"));
+        }
+
+        if (metadata is { ValueKind: not JsonValueKind.Object })
+        {
+            failures.Add(new ValidationFailure("metadata", "metadata must be a JSON object"));
         }
 
         return failures;

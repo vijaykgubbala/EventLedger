@@ -17,7 +17,7 @@ public class EventsController(
     public async Task<IActionResult> Submit([FromBody] SubmitEventRequest request, CancellationToken cancellationToken)
     {
         var failures = validator.Validate(
-            request.EventId, request.AccountId, request.Type, request.Amount, request.Currency, request.EventTimestamp);
+            request.EventId, request.AccountId, request.Type, request.Amount, request.Currency, request.EventTimestamp, request.Metadata);
 
         if (failures.Count > 0)
         {

@@ -54,4 +54,32 @@ public class BalanceQueryHandlerTests : IDisposable
 
         Assert.Equal(0m, balance);
     }
+
+    [Fact]
+    public async Task GetBalanceAsync_AllCredits_ReturnsSumOfCredits()
+    {
+        _db.Transactions.AddRange(
+            NewTransaction("acct-3", TransactionType.Credit, 100m),
+            NewTransaction("acct-3", TransactionType.Credit, 50m));
+        await _db.SaveChangesAsync();
+
+        var handler = new BalanceQueryHandler(_db);
+        var balance = await handler.GetBalanceAsync("acct-3");
+
+        Assert.Equal(150m, balance);
+    }
+
+    [Fact]
+    public async Task GetBalanceAsync_AllDebits_ReturnsNegativeSumOfDebits()
+    {
+        _db.Transactions.AddRange(
+            NewTransaction("acct-4", TransactionType.Debit, 40m),
+            NewTransaction("acct-4", TransactionType.Debit, 60m));
+        await _db.SaveChangesAsync();
+
+        var handler = new BalanceQueryHandler(_db);
+        var balance = await handler.GetBalanceAsync("acct-4");
+
+        Assert.Equal(-100m, balance);
+    }
 }

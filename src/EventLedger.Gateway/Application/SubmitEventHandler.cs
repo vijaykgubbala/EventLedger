@@ -45,11 +45,14 @@ public sealed class SubmitEventHandler(
             return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
         }
 
-        if (!response.IsSuccessStatusCode)
+        using (response)
         {
-            logger.LogError(
-                "Account Service returned {StatusCode} for eventId {EventId}", response.StatusCode, eventId);
-            return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError(
+                    "Account Service returned {StatusCode} for eventId {EventId}", response.StatusCode, eventId);
+                return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
+            }
         }
 
         var record = new EventRecord
