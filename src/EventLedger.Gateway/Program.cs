@@ -12,6 +12,8 @@ try
 
     var app = builder.Build();
 
+    app.EnsureGatewayDatabaseCreated();
+
     app.UseTraceLogging();
     app.MapControllers();
 

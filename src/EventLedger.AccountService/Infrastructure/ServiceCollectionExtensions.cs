@@ -1,3 +1,5 @@
+using EventLedger.AccountService.Application;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 namespace EventLedger.AccountService.Infrastructure;
@@ -17,7 +19,20 @@ public static class ServiceCollectionExtensions
     {
         builder.Host.UseSerilog();
         builder.Services.AddControllers();
+        builder.Services.AddDbContext<AccountDbContext>(opt =>
+            opt.UseSqlite(builder.Configuration.GetConnectionString("AccountService")));
+        builder.Services.AddScoped<ApplyTransactionHandler>();
+        builder.Services.AddScoped<BalanceQueryHandler>();
+        builder.Services.AddScoped<AccountDetailsHandler>();
 
         return builder;
+    }
+
+    public static WebApplication EnsureAccountServiceDatabaseCreated(this WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<AccountDbContext>().Database.EnsureCreated();
+
+        return app;
     }
 }

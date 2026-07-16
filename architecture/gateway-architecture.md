@@ -36,28 +36,45 @@ in [standards/events.md](../standards/events.md).
 
 ## `POST /events` flow
 
+The Gateway's idempotency handling is **two-stage**, precisely because of
+confirm-before-persist: the local insert can only happen *after* the
+Account Service confirms, so a separate, earlier check is needed to avoid
+calling the Account Service again on an already-known duplicate. Neither
+stage alone is the full idempotency guarantee — stage 1 is a performance
+optimization for the common sequential-retry case; stage 2 (the `UNIQUE`
+constraint at insert time) is what actually closes the concurrent-race
+case and is the real safety mechanism.
+
 1. **Validate** the request body against the rules in
    [standards/events.md](../standards/events.md) (required fields, `type` in
    `{CREDIT, DEBIT}`, `amount > 0`). Invalid requests return `400` before
    any storage or network call happens.
-2. **Idempotency check.** Attempt the insert (see below) rather than a
-   separate existence check — the `UNIQUE` constraint on `eventId` is the
-   arbiter, not application logic.
-3. **Call the Account Service**: `POST /accounts/{accountId}/transactions`
-   with the event's `accountId`, `type`, `amount`, and `eventId` (so the
-   Account Service can independently enforce its own idempotency — see
+2. **Fast-path duplicate check.** `SELECT` the Gateway's own `events` table
+   for this `eventId`. If found, return the stored record immediately with
+   `200` — the Account Service is **not** called. This is the common
+   idempotent-retry path (a client resubmitting after already getting a
+   success) and it's purely an optimization: skipping it would not break
+   correctness, only waste a redundant Account Service call.
+3. **If not found locally**, call the Account Service:
+   `POST /accounts/{accountId}/transactions` with the event's `accountId`,
+   `type`, `amount`, and `eventId` (so the Account Service can independently
+   enforce its own idempotency — see
    [account-architecture.md](account-architecture.md)). This call goes
    through the Polly resilience pipeline described in
    [resiliency.md](resiliency.md).
-4. **On confirmed success** from the Account Service, insert the Event row
-   locally and return `201` with the stored record.
-5. **On a duplicate `eventId`** (the Gateway's own `UNIQUE` constraint
-   rejects the insert), skip the Account Service call entirely and return
-   the original stored record with `200`. This is the common idempotent-
-   retry path and it does not need to touch the Account Service at all,
-   since the Gateway only reaches step 4 after the Account Service already
-   confirmed the transaction the first time.
-6. **On Account Service failure** (error response, timeout, or an open
+4. **On confirmed success** from the Account Service (a fresh apply, or the
+   Account Service's own duplicate response), attempt to `INSERT` the Event
+   row locally:
+   - **Insert succeeds** → return `201` with the new record.
+   - **Insert fails on the `UNIQUE` constraint** (a concurrent duplicate
+     request raced ahead and inserted first, between this request's step 2
+     check and this step) → `SELECT` and return the already-committed
+     record with `200`, not the data this request tried to insert. This is
+     the actual idempotency guarantee — see
+     [vertical-architecture.md](vertical-architecture.md#core-decision-idempotency-via-db-level-unique-constraint)
+     and
+     [docs/patterns/2026-07-15-idempotency-key-race.md](../docs/patterns/2026-07-15-idempotency-key-race.md).
+5. **On Account Service failure** (error response, timeout, or an open
    circuit — see [resiliency.md](resiliency.md)), persist nothing and
    return `503` with a message indicating the Account Service is
    unavailable. See
@@ -77,9 +94,17 @@ header plumbing is required or should be added — see
 
 - **Do not call the Account Service before validating the request body.**
   Validation failures must never produce a network call.
-- **Do not perform a separate "does this eventId exist" `SELECT` before
-  inserting.** Attempt the insert and handle the `UNIQUE` violation — see
+- **Do not treat the fast-path `SELECT` in step 2 as the idempotency
+  guarantee.** It only catches a duplicate that arrived *after* an earlier
+  request already completed; it cannot see a concurrent request still
+  in-flight. The final insert (step 4) must still be attempt-insert /
+  catch-`UNIQUE`-violation, never "the earlier `SELECT` found nothing, so
+  skip straight to `INSERT` without handling a possible race." See
   [vertical-architecture.md](vertical-architecture.md).
+- **Do not skip the fast-path `SELECT` (step 2) and call the Account
+  Service on every request "since the final insert will catch duplicates
+  anyway."** That's correct but wasteful — every sequential retry would
+  re-call the Account Service for no reason. Keep both stages.
 - **Do not call the Account Service again on a recognized duplicate
   `eventId`.** The first successful call already applied the transaction;
   calling again is redundant traffic in the best case and a correctness

@@ -12,6 +12,8 @@ try
 
     var app = builder.Build();
 
+    app.EnsureAccountServiceDatabaseCreated();
+
     app.UseTraceLogging();
     app.MapControllers();
 
