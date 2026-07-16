@@ -59,4 +59,32 @@ public class GatewayDbContextTests : IDisposable
 
         await Assert.ThrowsAsync<DbUpdateException>(() => _db.SaveChangesAsync());
     }
+
+    [Fact]
+    public async Task Insert_UnmappedTransactionTypeValue_ThrowsBeforeReachingDatabase()
+    {
+        var invalid = NewEvent("evt-invalid-type");
+        invalid.Type = (TransactionType)99;
+        _db.Events.Add(invalid);
+
+        var ex = await Assert.ThrowsAsync<DbUpdateException>(() => _db.SaveChangesAsync());
+        Assert.IsType<ArgumentOutOfRangeException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task Schema_UsesSnakeCaseColumnNames()
+    {
+        var connection = _db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'events'";
+        var schema = (string)(await command.ExecuteScalarAsync())!;
+
+        Assert.Contains("\"event_id\"", schema);
+        Assert.Contains("\"account_id\"", schema);
+        Assert.Contains("\"event_timestamp\"", schema);
+        Assert.Contains("\"metadata_json\"", schema);
+        Assert.Contains("\"received_at\"", schema);
+        Assert.DoesNotContain("\"EventId\"", schema);
+    }
 }

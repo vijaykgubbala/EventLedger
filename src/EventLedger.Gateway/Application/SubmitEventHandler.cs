@@ -36,7 +36,7 @@ public sealed class SubmitEventHandler(
         {
             response = await client.PostAsJsonAsync(
                 $"/accounts/{accountId}/transactions",
-                new { eventId, accountId, type = ToWireString(type), amount },
+                new { eventId, accountId, type = type.ToWireString(), amount },
                 cancellationToken);
         }
         catch (HttpRequestException ex)
@@ -90,11 +90,4 @@ public sealed class SubmitEventHandler(
                 stored.EventId);
         }
     }
-
-    private static string ToWireString(TransactionType type) => type switch
-    {
-        TransactionType.Credit => "CREDIT",
-        TransactionType.Debit => "DEBIT",
-        _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
-    };
 }

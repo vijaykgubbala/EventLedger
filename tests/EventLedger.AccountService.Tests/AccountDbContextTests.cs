@@ -57,4 +57,30 @@ public class AccountDbContextTests : IDisposable
 
         await Assert.ThrowsAsync<DbUpdateException>(() => _db.SaveChangesAsync());
     }
+
+    [Fact]
+    public async Task Insert_UnmappedTransactionTypeValue_ThrowsBeforeReachingDatabase()
+    {
+        var invalid = NewTransaction("evt-invalid-type");
+        invalid.Type = (TransactionType)99;
+        _db.Transactions.Add(invalid);
+
+        var ex = await Assert.ThrowsAsync<DbUpdateException>(() => _db.SaveChangesAsync());
+        Assert.IsType<ArgumentOutOfRangeException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task Schema_UsesSnakeCaseColumnNames()
+    {
+        var connection = _db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'transactions'";
+        var schema = (string)(await command.ExecuteScalarAsync())!;
+
+        Assert.Contains("\"event_id\"", schema);
+        Assert.Contains("\"account_id\"", schema);
+        Assert.Contains("\"applied_at\"", schema);
+        Assert.DoesNotContain("\"EventId\"", schema);
+    }
 }
