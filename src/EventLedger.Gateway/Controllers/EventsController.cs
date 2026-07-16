@@ -36,9 +36,7 @@ public class EventsController(
         {
             SubmitEventOutcome.Created => StatusCode(StatusCodes.Status201Created, ToResponse(result.Event!)),
             SubmitEventOutcome.Duplicate => Ok(ToResponse(result.Event!)),
-            SubmitEventOutcome.AccountServiceUnavailable => StatusCode(
-                StatusCodes.Status503ServiceUnavailable,
-                new { error = "account_service_unavailable", message = "The Account Service is currently unavailable." }),
+            SubmitEventOutcome.AccountServiceUnavailable => this.AccountServiceUnavailable(),
             SubmitEventOutcome.Fault => StatusCode(
                 StatusCodes.Status500InternalServerError,
                 new { error = "internal_error", message = "The event could not be recorded." }),

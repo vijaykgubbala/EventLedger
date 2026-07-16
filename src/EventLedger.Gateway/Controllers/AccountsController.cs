@@ -15,9 +15,7 @@ public class AccountsController(BalanceQueryHandler balanceQueryHandler) : Contr
         return result.Outcome switch
         {
             BalanceQueryOutcome.Success => Content(result.Body!, "application/json"),
-            BalanceQueryOutcome.AccountServiceUnavailable => StatusCode(
-                StatusCodes.Status503ServiceUnavailable,
-                new { error = "account_service_unavailable", message = "The Account Service is currently unavailable." }),
+            BalanceQueryOutcome.AccountServiceUnavailable => this.AccountServiceUnavailable(),
             _ => throw new InvalidOperationException($"Unhandled outcome {result.Outcome}")
         };
     }
