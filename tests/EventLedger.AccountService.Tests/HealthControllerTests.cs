@@ -6,7 +6,7 @@ namespace EventLedger.AccountService.Tests;
 public class HealthControllerTests
 {
     [Fact]
-    public async Task GetHealth_Returns200WithOkStatus()
+    public async Task GetHealth_DatabaseReachable_Returns200WithOkStatus()
     {
         await using var factory = new WebApplicationFactory<Program>();
         using var client = factory.CreateClient();
@@ -15,6 +15,6 @@ public class HealthControllerTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Equal("{\"status\":\"ok\"}", body);
+        Assert.Equal("{\"status\":\"ok\",\"database\":\"ok\"}", body);
     }
 }
