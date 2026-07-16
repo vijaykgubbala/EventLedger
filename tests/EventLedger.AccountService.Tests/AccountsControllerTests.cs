@@ -76,6 +76,41 @@ public class AccountsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task PostTransactions_MissingEventId_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/accounts/acct-1/transactions", new { accountId = "acct-1", type = "CREDIT", amount = 100m });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("validation_error", body!.Error);
+    }
+
+    [Fact]
+    public async Task PostTransactions_MissingAmount_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/accounts/acct-1/transactions", new { eventId = "evt-missing-amount", accountId = "acct-1", type = "CREDIT" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PostTransactions_InvalidType_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/accounts/acct-1/transactions", new { eventId = "evt-invalid-type", accountId = "acct-1", type = "PAYMENT", amount = 100m });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetAccount_ReturnsAccountIdAndTransactionList()
     {
         using var factory = CreateFactory();
@@ -95,4 +130,6 @@ public class AccountsControllerTests : IDisposable
     private sealed record BalanceResponseDto(string AccountId, decimal Balance);
 
     private sealed record AccountDetailsResponseDto(string AccountId, decimal Balance, List<TransactionResponseDto> Transactions);
+
+    private sealed record ErrorResponseDto(string Error, string Message, object? Details);
 }

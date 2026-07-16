@@ -15,10 +15,24 @@ public class AccountsController(
     public async Task<IActionResult> ApplyTransaction(
         string accountId, [FromBody] ApplyTransactionRequest request, CancellationToken cancellationToken)
     {
-        var type = TransactionTypeExtensions.ParseWireString(request.Type!);
+        // Well-formedness only (missing/malformed fields) — not business-rule validation.
+        // The Gateway owns amount/type business rules; the DB CHECK constraint is the sole
+        // backstop for those, per standards/api.md's anti-pattern against divergent rules.
+        if (string.IsNullOrWhiteSpace(request.EventId) ||
+            request.Amount is null ||
+            request.Type is not ("CREDIT" or "DEBIT"))
+        {
+            return BadRequest(new
+            {
+                error = "validation_error",
+                message = "eventId, amount, and a valid type (CREDIT or DEBIT) are required."
+            });
+        }
+
+        var type = TransactionTypeExtensions.ParseWireString(request.Type);
 
         var result = await applyHandler.ApplyAsync(
-            request.EventId!, accountId, type, request.Amount!.Value, cancellationToken);
+            request.EventId, accountId, type, request.Amount.Value, cancellationToken);
 
         return result.Outcome switch
         {
