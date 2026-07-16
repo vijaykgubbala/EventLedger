@@ -28,14 +28,17 @@ call, and it will inevitably be missed on some code path.
 ## Required fields on every log entry
 
 The `JsonFormatter` console sink produces these automatically, plus
-whatever's been pushed into `LogContext`:
+whatever's been pushed into `LogContext`. Field names below are
+`Serilog.Formatting.Json.JsonFormatter`'s own top-level property names —
+**not** the `@t`/`@l`/`@m`/`@mt` shorthand used by Serilog's separate
+`CompactJsonFormatter`, which this codebase does not use:
 
 | Field | Source |
 |---|---|
-| `@t` (timestamp) | Automatic (Serilog `JsonFormatter`) |
-| `@l` (level) | Automatic |
-| `@m` / `@mt` (message) | Automatic, from the log call |
-| `ServiceName` | `Enrich.WithProperty`, set once at startup per service |
+| `Timestamp` | Automatic (Serilog `JsonFormatter`) |
+| `Level` | Automatic |
+| `MessageTemplate` | Automatic, from the log call |
+| `ServiceName` | `Enrich.WithProperty`, set once at startup per service (nested under `Properties`) |
 | `TraceId` | Pushed into `LogContext` by request middleware (see below), sourced from the current `Activity`/OpenTelemetry span |
 
 ## Pushing the trace ID into `LogContext`

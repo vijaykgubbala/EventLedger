@@ -53,15 +53,13 @@ viewer.
 diagnostic: database connectivity (a trivial query against the local
 SQLite file).
 
-> **Sequencing note:** issue #3 (Service separation) ships `/health` as a
-> trivial `{"status": "ok"}` placeholder, with no DB-connectivity check yet
-> — deliberate and temporary, since no `DbContext` exists until issue #2.
-> Issue #5 (Observability) upgrades the same route in place to match the
-> full contract below. See that story's plan (`docs/plans/`) for the
-> tracked gap. Noted here, not just in `docs/plans/`, so a reader of this
-> file alone — including the `architecture-advisor` agent, which only
-> reads `architecture/` — doesn't take the full contract as already true
-> before it is.
+> **Sequencing note:** issue #3 (Service separation) shipped `/health` as a
+> trivial `{"status": "ok"}` placeholder, with no DB-connectivity check —
+> deliberate and temporary, since no `DbContext` existed until issue #2.
+> Issue #5 (Observability) upgraded the same route in place to match the
+> full contract below — both services now return
+> `{"status": "ok"|"degraded", "database": "ok"|"unreachable"}`, always
+> `200`. See `docs/plans/5_observability-plan.md` for the implementation.
 
 The Gateway's `/health` does **not** block on Account Service
 reachability — a health check must answer quickly from local state, not

@@ -1,5 +1,7 @@
 using EventLedger.Gateway.Application;
+using EventLedger.Gateway.Middleware;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -28,11 +30,13 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<EventValidator>();
         builder.Services.AddScoped<SubmitEventHandler>();
         builder.Services.AddScoped<EventQueryHandler>();
+        builder.Services.AddScoped<HealthCheckHandler>();
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService(serviceName))
             .WithTracing(tracing => tracing
                 .AddAspNetCoreInstrumentation()
-                .AddHttpClientInstrumentation());
+                .AddHttpClientInstrumentation())
+            .WithMetrics(metrics => metrics.AddMeter(RequestMetricsMiddleware.MeterName));
 
         return builder;
     }

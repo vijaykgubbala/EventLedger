@@ -17,6 +17,7 @@ try
     app.EnsureGatewayDatabaseCreated();
 
     app.UseTraceLogging();
+    app.UseRequestMetrics();
     app.MapControllers();
 
     app.Run();
