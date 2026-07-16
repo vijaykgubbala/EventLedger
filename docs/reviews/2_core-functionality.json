@@ -19,7 +19,9 @@
       "src/EventLedger.Gateway/Application/EventQueryHandler.cs",
       "standards/api.md",
       "architecture/account-architecture.md"
-    ]
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
   },
   "findings": [
     {
@@ -50,7 +52,7 @@
       "line": 9,
       "summary": "Read-only EF Core queries across both services don't use AsNoTracking(), wasting change-tracking overhead on every GET request.",
       "detail": "EventQueryHandler.GetByIdAsync/ListByAccountAsync, BalanceQueryHandler.GetBalanceAsync, and AccountDetailsHandler.GetDetailsAsync are pure read paths with no subsequent SaveChangesAsync, yet none call .AsNoTracking(). EF Core's default change tracking snapshots every returned entity for later diffing — wasted work on every GET /events/{id}, GET /events?account=..., GET /accounts/{id}/balance, and GET /accounts/{id} request.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Added .AsNoTracking() to all four read-only query call sites.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F4",
@@ -60,7 +62,7 @@
       "line": 37,
       "summary": "HttpResponseMessage returned from client.PostAsJsonAsync is never disposed.",
       "detail": "response = await client.PostAsJsonAsync(...) assigns an IDisposable HttpResponseMessage that is read only via .IsSuccessStatusCode/.StatusCode and never wrapped in using or disposed on either the success or failure path. Its Content stream stays open until GC finalization rather than released deterministically.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Wrapped the status-code check in a using (response) block so it's disposed as soon as the handler is done reading it.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F5",
@@ -70,7 +72,7 @@
       "line": 19,
       "summary": "standards/api.md's status-code table still lists 404 for GET /accounts/{id} and GET /accounts/{id}/balance, but the delivered code deliberately never returns 404 from either endpoint.",
       "detail": "AccountsController's GetBalance and GetAccount always return 200 (balance 0 / empty transaction list for any accountId with no rows) — a deliberate Phase 6 decision recorded in docs/plans/2_core-functionality-plan.md, since accountId is an implicit, non-stored identity with no way to distinguish 'never existed' from 'zero transactions.' standards/api.md and architecture/account-architecture.md were not updated to reflect this in the same change.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Updated standards/api.md's status-code table (404 now scoped to GET /events/{id} only, with a note explaining why the two Account Service GET endpoints never 404) and added a matching note to architecture/account-architecture.md's Endpoints section.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F6",
@@ -80,7 +82,7 @@
       "line": 16,
       "summary": "The balance formula (SUM(CREDIT) - SUM(DEBIT)) is implemented twice within the Account Service — once in BalanceQueryHandler, once independently in AccountDetailsHandler.",
       "detail": "Both handlers independently write `t.Type == TransactionType.Credit ? t.Amount : -t.Amount` summed over the account's rows. The plan's Phase 3 text says AccountDetailsHandler reuses BalanceQueryHandler, but the delivered code re-derives the sum from its own already-materialized list instead (avoiding a second DB round trip, per the /simplify efficiency fix). This system's most important business invariant is now expressed in two places that must be kept in sync by hand.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Extracted TransactionRecordExtensions.ComputeBalance() in Domain/; both BalanceQueryHandler and AccountDetailsHandler now call it against their own already-materialized lists, keeping the single-query efficiency while removing the duplicated formula.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F7",
@@ -89,7 +91,7 @@
       "file": "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs",
       "summary": "Only one of the three required validation categories is asserted at the HTTP/controller level (400 + error body) — missing-field and invalid-type are only unit-tested against EventValidator, never through the actual HTTP boundary.",
       "detail": "EventValidatorTests.cs covers all three categories (missing field, amount<=0, invalid type) at the unit level. EventsControllerTests.cs has exactly one integration-level 400 test, covering only amount<=0. No controller-level test asserts 400 + {error, message, details} for a missing required field or an invalid type value.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Added PostEvents_MissingRequiredField_Returns400WithErrorShape and PostEvents_InvalidType_Returns400WithErrorShape to EventsControllerTests.cs.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F8",
@@ -98,7 +100,7 @@
       "file": "tests/EventLedger.Gateway.Tests/SubmitEventHandlerTests.cs",
       "summary": "No test explicitly asserts balance is unchanged after a duplicate eventId submission.",
       "detail": "Existing duplicate-eventId tests check row count == 1 and that the original record is returned, but none call GetBalanceAsync/GET /accounts/{id}/balance afterward to explicitly confirm the balance did not change (e.g. was not double-counted) as a result of the duplicate submission.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Extended ApplyTransactionHandlerTests.ApplyAsync_DuplicateEventId_ReturnsExistingRecordNoSecondRow to assert balance before == balance after the duplicate call.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F9",
@@ -107,7 +109,7 @@
       "file": "none",
       "summary": "No test combines out-of-order eventTimestamp submission with a balance-correctness assertion.",
       "detail": "Ordering is fully covered (GetEventsByAccount_ReturnsArrayOrderedAscendingByEventTimestamp, ListByAccountAsync_MultipleEventsOutOfArrivalOrder...). SubmitAsync_OutOfOrderEventTimestampsAcrossMultipleEvents_AllApplySuccessfully submits out-of-order timestamps but only asserts row count, never queries the resulting balance.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Added PostEvents_MixedTransactionsSubmittedOutOfEventTimestampOrder_ResultingBalanceIsCorrect to GatewayToAccountServiceFullFlowTests.cs, since the Gateway itself doesn't compute balance — this needed the real two-service wiring to be meaningful.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F10",
@@ -116,7 +118,7 @@
       "file": "tests/EventLedger.AccountService.Tests/BalanceQueryHandlerTests.cs",
       "summary": "Missing explicit all-credit and all-debit edge cases for balance computation.",
       "detail": "BalanceQueryHandlerTests.cs covers mixed and zero-transaction cases, but no test has only CREDIT or only DEBIT transactions for an account (e.g. asserting an all-debit set produces a correct negative balance).",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Added GetBalanceAsync_AllCredits_ReturnsSumOfCredits and GetBalanceAsync_AllDebits_ReturnsNegativeSumOfDebits.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F11",
@@ -125,7 +127,7 @@
       "file": "tests/EventLedger.Gateway.Tests/GatewayToAccountServiceFullFlowTests.cs",
       "summary": "The one real full-flow test only covers the happy-path create case, not a duplicate resubmission through the real two-service wiring.",
       "detail": "Beyond the checklist minimum (met), driving a duplicate eventId resubmission through the real Gateway+AccountService wiring would exercise a scenario the mocked-handler unit tests can't observe: the Account Service's own duplicate-detection path triggered by a real second Gateway call.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "ignored", "reasoning": "The duplicate-eventId path is already thoroughly covered by stub-backed unit/integration tests in both services (ApplyTransactionHandlerTests, SubmitEventHandlerTests, AccountsControllerTests). A second full-flow test spinning up two in-process hosts adds real runtime cost for marginal incremental coverage over what's already verified.", "commit": null, "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F12",
@@ -135,7 +137,7 @@
       "line": 47,
       "summary": "EventValidator never checks that metadata, when present, is actually a JSON object.",
       "detail": "standards/api.md requires metadata to be a JSON object when present. A payload with \"metadata\": \"just a string\" or 42 is silently accepted and stored as opaque text rather than rejected with 400. No injection/executable-content risk — spec-conformance gap only.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Added a ValueKind == JsonValueKind.Object check to EventValidator.Validate() (optional trailing parameter, existing call sites unaffected), with new tests for present-non-object, present-object, and absent metadata.", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F13",
@@ -145,7 +147,7 @@
       "line": 3,
       "summary": "ApplyTransactionRequest.AccountId is bound from the request body but never read — the controller always uses the route's accountId instead.",
       "detail": "Harmless today, but invites a future bug where someone reads request.AccountId by mistake while the actual value in use is the route parameter. account-architecture.md already documents accountId as coming from the route, not the body.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "addressed", "reasoning": "Removed the unused AccountId field from ApplyTransactionRequest. Existing test payloads that still send accountId in the JSON body are unaffected (System.Text.Json ignores unknown properties by default).", "commit": "590a0a6", "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     },
     {
       "id": "F14",
@@ -155,12 +157,12 @@
       "line": 28,
       "summary": "Wire-string-to-domain-type parsing executes directly in Controllers/ in both services, not Application/, per backend-architecture.md's file-placement table.",
       "detail": "Low-risk today since the Gateway's parse is guaranteed to succeed by prior EventValidator validation, but the Account Service's equivalent (AccountsController.cs:18) is exactly what F1 flags as unguarded. Moving ParseWireString into SubmitEventHandler/ApplyTransactionHandler (Application/) and passing the raw wire string in would also close F1's crash path.",
-      "disposition": { "status": "pending", "reasoning": null, "commit": null, "issue": null, "timestamp": null }
+      "disposition": { "status": "ignored", "reasoning": "F1's crash risk (the reason this would have mattered most) is already closed via the guard clause added in commit 1cb1749. Moving the parse calls into Application/ now would be a larger, riskier refactor for a purely architectural-purity gain with no remaining functional benefit — not worth it at this point in the story.", "commit": null, "issue": null, "timestamp": "2026-07-15T00:00:00Z" }
     }
   ],
   "summary": {
     "totalFindings": 14,
     "bySeverity": { "critical": 1, "warning": 9, "suggestion": 4 },
-    "byDisposition": { "pending": 14, "addressed": 0, "ignored": 0, "deferred": 0 }
+    "byDisposition": { "pending": 0, "addressed": 12, "ignored": 2, "deferred": 0 }
   }
 }
