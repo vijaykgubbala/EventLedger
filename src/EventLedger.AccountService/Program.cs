@@ -17,6 +17,7 @@ try
     app.EnsureAccountServiceDatabaseCreated();
 
     app.UseTraceLogging();
+    app.UseRequestMetrics();
     app.MapControllers();
 
     app.Run();

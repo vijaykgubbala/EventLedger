@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 namespace EventLedger.Gateway.Tests;
@@ -20,5 +21,20 @@ public class OpenTelemetryRegistrationTests
         var tracerProvider = factory.Services.GetService<TracerProvider>();
 
         Assert.NotNull(tracerProvider);
+    }
+
+    [Fact]
+    public async Task GatewayHost_RegistersMeterProvider()
+    {
+        // Same rationale as GatewayHost_RegistersTracerProvider, for .WithMetrics(...): proves
+        // OTel metrics SDK registration itself, independent of RequestMetricsMiddlewareTests'
+        // MeterListener-based value assertions (which observe the Counter directly and would
+        // still pass even if .WithMetrics(...) were deleted, since MeterListener doesn't go
+        // through the OTel SDK/DI at all).
+        await using var factory = new WebApplicationFactory<Program>();
+
+        var meterProvider = factory.Services.GetService<MeterProvider>();
+
+        Assert.NotNull(meterProvider);
     }
 }

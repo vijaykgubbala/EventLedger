@@ -1,5 +1,7 @@
 using EventLedger.AccountService.Application;
+using EventLedger.AccountService.Middleware;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
@@ -28,7 +30,8 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<AccountDetailsHandler>();
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService(serviceName))
-            .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation());
+            .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation())
+            .WithMetrics(metrics => metrics.AddMeter(RequestMetricsMiddleware.MeterName));
 
         return builder;
     }
