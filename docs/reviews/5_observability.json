@@ -1,0 +1,184 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "timestamp": "2026-07-16T02:30:00Z",
+    "branch": "5_observability",
+    "baseBranch": "master",
+    "commitSha": "1ed659668b71b2dc9093e835e8a60e51b8835289",
+    "issue": 5,
+    "filesReviewed": [
+      "src/EventLedger.Gateway/Controllers/HealthController.cs",
+      "src/EventLedger.AccountService/Controllers/HealthController.cs",
+      "src/EventLedger.Gateway/Middleware/RequestMetricsMiddleware.cs",
+      "src/EventLedger.AccountService/Middleware/RequestMetricsMiddleware.cs",
+      "src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.AccountService/Infrastructure/ServiceCollectionExtensions.cs",
+      "src/EventLedger.Gateway/Program.cs",
+      "src/EventLedger.AccountService/Program.cs",
+      "tests/EventLedger.Gateway.Tests/GatewayLoggingTests.cs",
+      "tests/EventLedger.AccountService.Tests/AccountServiceLoggingTests.cs",
+      "tests/EventLedger.Gateway.Tests/HealthControllerTests.cs",
+      "tests/EventLedger.AccountService.Tests/HealthControllerTests.cs",
+      "tests/EventLedger.Gateway.Tests/OpenTelemetryRegistrationTests.cs",
+      "tests/EventLedger.AccountService.Tests/OpenTelemetryRegistrationTests.cs",
+      "tests/EventLedger.Gateway.Tests/RequestMetricsMiddlewareTests.cs",
+      "tests/EventLedger.AccountService.Tests/RequestMetricsMiddlewareTests.cs",
+      "standards/backend-architecture.md",
+      "standards/logging-dotnet.md",
+      "architecture/observability.md"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "agent": "review-correctness (corroborated by review-dotnet)",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Middleware/RequestMetricsMiddleware.cs",
+      "line": 15,
+      "summary": "The request-count Counter is only recorded after `await next()` returns normally, so a request that throws an unhandled exception is silently dropped from the metric.",
+      "detail": "Neither service registers a global exception-handling middleware (confirmed: no UseExceptionHandler/IExceptionHandler in either Program.cs). If an exception escapes a controller's local try/catch, it propagates through RequestMetricsMiddleware's `app.Use((context, next) => ...)` lambda uncaught, skipping the `RequestCounter.Add(...)` call entirely. architecture/observability.md's stated purpose for this metric is knowing whether requests are succeeding — a metric that silently under-counts exactly the failure case it exists to surface undermines that purpose. Fix: wrap `await next()` in try/finally, recording context.Response.StatusCode in the finally block (ASP.NET Core sets it to 500 by default once an exception unwinds past the point where the response hasn't started).",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Wrapped await next() in try/catch: success path records context.Response.StatusCode as before; catch block explicitly records StatusCodes.Status500InternalServerError (context.Response.StatusCode isn't reliably set to its final value yet at this point in the pipeline — that happens in the hosting layer's outer catch, above this middleware) then rethrows to preserve normal exception propagation. New regression test RequestThatThrowsUnhandledException_StillRecordsMeasurement drops the events table via a real corrupted SQLite DB to force a genuine unhandled SqliteException, confirmed genuinely red before the fix and green after.",
+        "commit": "9829b5f",
+        "issue": null,
+        "timestamp": "2026-07-16T03:00:00Z"
+      }
+    },
+    {
+      "id": "F2",
+      "agent": "review-correctness (corroborated by review-dotnet)",
+      "severity": "warning",
+      "file": "src/EventLedger.AccountService/Middleware/RequestMetricsMiddleware.cs",
+      "line": 15,
+      "summary": "Same exception-safety gap as F1: an unhandled exception skips the counter increment entirely.",
+      "detail": "Identical shape and identical fix as F1 — no global exception handler exists in this service either, so RequestCounter.Add(...) after await next() is unreachable on any unhandled exception.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Applied the identical try/catch fix as F1. New regression test RequestThatThrowsUnhandledException_StillRecordsMeasurement drops the transactions table via a real corrupted SQLite DB to force a genuine unhandled SqliteException, confirmed genuinely red before the fix and green after.",
+        "commit": "9829b5f",
+        "issue": null,
+        "timestamp": "2026-07-16T03:00:00Z"
+      }
+    },
+    {
+      "id": "F3",
+      "agent": "review-dotnet (corroborated by review-maintainability)",
+      "severity": "warning",
+      "file": "src/EventLedger.Gateway/Controllers/HealthController.cs",
+      "line": 7,
+      "summary": "HealthController injects and directly queries GatewayDbContext, violating this repo's own Controllers/ layering rule.",
+      "detail": "standards/backend-architecture.md's file-placement table explicitly lists 'direct DbContext usage' under what Controllers/ 'Does not contain' — that responsibility belongs in Application/, alongside SubmitEventHandler/EventQueryHandler which every other Gateway endpoint already routes through. Fix: a small Application/ handler (e.g. HealthCheckHandler.CheckAsync(CancellationToken)) that the controller calls into, keeping the controller limited to translating the result into an HTTP response.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Extracted src/EventLedger.Gateway/Application/HealthCheckHandler.cs (CanConnectAsync wrapper around GatewayDbContext), registered via AddScoped<HealthCheckHandler>() in ServiceCollectionExtensions.cs, and updated HealthController to inject/call it instead of GatewayDbContext directly — matching EventQueryHandler/SubmitEventHandler's existing shape. Pure refactor, no behavior change: existing HealthControllerTests.cs (both reachable and unreachable cases) pass unchanged.",
+        "commit": "3c366fa",
+        "issue": null,
+        "timestamp": "2026-07-16T03:20:00Z"
+      }
+    },
+    {
+      "id": "F4",
+      "agent": "review-dotnet (corroborated by review-maintainability)",
+      "severity": "warning",
+      "file": "src/EventLedger.AccountService/Controllers/HealthController.cs",
+      "line": 7,
+      "summary": "Same layering violation as F3: AccountService HealthController injects and directly queries AccountDbContext.",
+      "detail": "Identical issue as F3 — db.Database.CanConnectAsync(cancellationToken) called straight from the action method instead of through an Application/ handler (mirroring ApplyTransactionHandler/BalanceQueryHandler/AccountDetailsHandler, which already exist in this service).",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Applied the identical extraction as F3: src/EventLedger.AccountService/Application/HealthCheckHandler.cs, registered via AddScoped<HealthCheckHandler>(), HealthController updated to inject it. Pure refactor, existing HealthControllerTests.cs passes unchanged.",
+        "commit": "3c366fa",
+        "issue": null,
+        "timestamp": "2026-07-16T03:20:00Z"
+      }
+    },
+    {
+      "id": "F5",
+      "agent": "review-dotnet",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/RequestMetricsMiddlewareTests.cs",
+      "line": 25,
+      "summary": "`listener` is both declared with `using` and explicitly `Dispose()`-d mid-test, disposing it twice.",
+      "detail": "MeterListener.Dispose() is documented as safe to call repeatedly so this isn't a functional bug, but it's redundant. Since the mid-test disposal is load-bearing (flushes pending measurements before assertions), drop the `using` and rely on the explicit Dispose() call alone. Identical pattern duplicated in the Account Service's twin test file.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Dropped `using` from all three `var listener = CreateListener(...)` call sites in both test files, relying solely on the existing mid-test explicit `listener.Dispose()` calls. Full solution test suite still passes (78/78).",
+        "commit": "90d8ca2",
+        "issue": null,
+        "timestamp": "2026-07-16T03:35:00Z"
+      }
+    },
+    {
+      "id": "F6",
+      "agent": "review-maintainability",
+      "severity": "suggestion",
+      "file": "standards/backend-architecture.md",
+      "line": 65,
+      "summary": "Cross-cutting-concerns table's 'metrics is issue #5's scope' note is now stale since this diff implements OTel metrics registration.",
+      "detail": "The row reads 'OpenTelemetry SDK registration (tracing; metrics is issue #5's scope)' — written as a forward reference before metrics existed. This diff adds .WithMetrics(...) to both services, closing that gap, but the table wasn't updated. A future reader (including the architecture-advisor agent, which treats this table as settled fact) would read the parenthetical as 'metrics not yet registered.' Fix: 'OpenTelemetry SDK registration (tracing + metrics)'.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Updated the table row to 'OpenTelemetry SDK registration (tracing + metrics)'.",
+        "commit": "90d8ca2",
+        "issue": null,
+        "timestamp": "2026-07-16T03:35:00Z"
+      }
+    },
+    {
+      "id": "F7",
+      "agent": "review-maintainability",
+      "severity": "suggestion",
+      "file": "architecture/observability.md",
+      "line": 56,
+      "summary": "The 'Sequencing note' describing issue #5's health-check upgrade as future work is now stale — the upgrade shipped in this diff.",
+      "detail": "The note says issue #3 shipped a placeholder and 'Issue #5 upgrades the same route in place to match the full contract below,' framed as pending. Since this diff is that upgrade, the note now describes completed work, not future work.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Rewrote the note in past tense describing the completed upgrade (both services now return {status, database}, always 200), pointing to docs/plans/5_observability-plan.md instead of framing it as tracked/pending future work.",
+        "commit": "90d8ca2",
+        "issue": null,
+        "timestamp": "2026-07-16T03:35:00Z"
+      }
+    },
+    {
+      "id": "F8",
+      "agent": "review-correctness",
+      "severity": "suggestion",
+      "file": "standards/logging-dotnet.md",
+      "line": 35,
+      "summary": "The required-fields table documents CompactJsonFormatter field names (@t/@l/@m/@mt), but the shipped code uses plain Serilog JsonFormatter, which emits Timestamp/Level/MessageTemplate — this diff's new tests assert the real field names without reconciling the doc.",
+      "detail": "Pre-existing drift from issues #3/#4, not introduced by this diff, but this diff is the first to formally lock in and test the actual field names (tests/EventLedger.Gateway.Tests/GatewayLoggingTests.cs and its AccountService twin assert Timestamp/Level/MessageTemplate directly) without updating the standards doc to match, per CLAUDE.md's convention of updating the owning doc in the same change a decision is confirmed.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Corrected the required-fields table to Timestamp/Level/MessageTemplate (JsonFormatter's actual top-level property names) with an explicit note distinguishing it from CompactJsonFormatter's @t/@l/@m/@mt shorthand, which this codebase does not use.",
+        "commit": "90d8ca2",
+        "issue": null,
+        "timestamp": "2026-07-16T03:35:00Z"
+      }
+    },
+    {
+      "id": "F9",
+      "agent": "review-maintainability",
+      "severity": "suggestion",
+      "file": "tests/EventLedger.Gateway.Tests/RequestMetricsMiddlewareTests.cs",
+      "line": 11,
+      "summary": "The MeterListener/RecordedMeasurement test-helper boilerplate is duplicated verbatim between the two new RequestMetricsMiddlewareTests.cs files, without a docs/simplify-patterns.md entry the way ConsoleLogCapture's per-test-project duplication was documented.",
+      "detail": "A dedicated /simplify reuse-review pass (run separately, prior to this workflow-review) already confirmed this duplication matches the established, deliberate per-test-project pattern (same rationale as ConsoleLogCapture/SqliteTempDbFixture — test projects don't reference each other) and is not itself a defect. This finding is narrower: only that the pattern wasn't added to docs/simplify-patterns.md the way ConsoleLogCapture's was, so a future reader building a third MeterListener-based test has no pointer to reuse the existing shape within its own project.",
+      "disposition": {
+        "status": "addressed",
+        "reasoning": "Added a new docs/simplify-patterns.md entry documenting the MeterListener/RecordedMeasurement pattern and its per-test-project duplication rationale, mirroring the existing ConsoleLogCapture entry's format.",
+        "commit": "90d8ca2",
+        "issue": null,
+        "timestamp": "2026-07-16T03:35:00Z"
+      }
+    }
+  ],
+  "summary": {
+    "totalFindings": 9,
+    "bySeverity": { "critical": 0, "warning": 4, "suggestion": 5 },
+    "byDisposition": { "pending": 0, "addressed": 9, "ignored": 0, "deferred": 0 }
+  }
+}
