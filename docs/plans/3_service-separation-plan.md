@@ -52,9 +52,9 @@ disagreement — see Decisions Made item 2 and Known Constraints below.
 
 ### Phase 4: Trivial health endpoint (both services)
 
-- [ ] Test: `GET /health` → `200` with `{"status": "ok"}` (integration, Phase 4)
-- [ ] Implement: `src/EventLedger.Gateway/Controllers/HealthController.cs` — `[HttpGet("/health")] public IActionResult Health() => Ok(new { status = "ok" });`
-- [ ] Implement: `src/EventLedger.AccountService/Controllers/HealthController.cs` — same
+- [x] Test: `GET /health` → `200` with `{"status": "ok"}` (integration, Phase 4) — confirmed red first (404, no route) before the controller existed
+- [x] Implement: `src/EventLedger.Gateway/Controllers/HealthController.cs` — `[HttpGet("/health")] public IActionResult Health() => Ok(new { status = "ok" });`
+- [x] Implement: `src/EventLedger.AccountService/Controllers/HealthController.cs` — same
 
 ### Phase 5: Gateway configuration for the Account Service base URL
 
