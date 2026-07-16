@@ -26,6 +26,30 @@ The circuit breaker sits outermost so that once it's open, calls fail
 immediately without even attempting a timeout/retry cycle — that's the
 point of "stop calling it temporarily."
 
+### Configured values
+
+| Strategy | Setting | Value |
+|---|---|---|
+| Timeout | Per-attempt timeout | 2 seconds |
+| Retry | Max attempts | 2 retries (3 attempts total) |
+| Retry | Delay | 200ms, fixed (not exponential) |
+| Retry / Circuit breaker | What counts as a failure | A 5xx status code, or any exception (network failure, or a timed-out attempt). A `4xx` never counts — it's deterministic (the same request produces the same `4xx` again), so retrying it can't help and it shouldn't count against the circuit's failure ratio either. |
+| Circuit breaker | Failure ratio to open | ≥50% |
+| Circuit breaker | Sampling window | 10 seconds |
+| Circuit breaker | Minimum throughput | 4 calls sampled in the window |
+| Circuit breaker | Break duration | 5 seconds, then half-open |
+
+A timed-out attempt is itself retriable under the shared failure predicate
+above — a genuinely hung Account Service doesn't necessarily recover on
+retry, so a hung call's worst-case latency is closer to `attempts ×
+timeout + (attempts − 1) × retry delay` (≈6.4s with these values) than a
+single 2-second timeout. Still bounded, per RES-2 — just not as tight as
+the per-attempt timeout alone would suggest.
+
+Implemented in `src/EventLedger.Gateway/Infrastructure/ServiceCollectionExtensions.cs`,
+chained onto the `AddHttpClient("AccountService", ...)` registration via
+`Microsoft.Extensions.Http.Resilience`'s `AddResilienceHandler("account-service", ...)`.
+
 ### Why circuit breaker + timeout as the *primary* pattern
 
 The assignment lists three acceptable patterns: circuit breaker, bulkhead,

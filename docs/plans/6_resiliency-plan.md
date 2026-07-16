@@ -62,7 +62,7 @@ No conflict. The `architecture-advisor` agent confirmed the pipeline shape/order
 
 ### Phase 4: Documentation
 
-- [ ] Update `architecture/resiliency.md` — add a new subsection (after the existing "Pipeline order" paragraph, before "Why circuit breaker + timeout as the *primary* pattern") recording the configured numeric thresholds: timeout 2s per attempt; retry 2 attempts, 200ms fixed delay, only for 5xx + network/timeout failures (never a `400`); circuit breaker opens at ≥50% failure ratio over a 10s sampling window with minimum throughput 4, breaks for 5s. Keep the existing rationale prose below it unchanged.
+- [x] Update `architecture/resiliency.md` — add a new subsection (after the existing "Pipeline order" paragraph, before "Why circuit breaker + timeout as the *primary* pattern") recording the configured numeric thresholds: timeout 2s per attempt; retry 2 attempts, 200ms fixed delay, only for 5xx + network/timeout failures (never a `400`); circuit breaker opens at ≥50% failure ratio over a 10s sampling window with minimum throughput 4, breaks for 5s. Keep the existing rationale prose below it unchanged. Added a "Configured values" table plus a note explaining a hung call's worst-case latency is ≈6.4s (not a flat 2s), since a timed-out attempt is itself retriable under the shared failure predicate — matches RES-2's actual observed test timing.
 
 ## Testing Strategy
 
