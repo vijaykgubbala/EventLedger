@@ -217,3 +217,102 @@ its Account Service equivalent, both of which subscribe a
 `System.Diagnostics.Metrics.MeterListener` directly to the in-process
 `Meter` and assert real recorded `(value, tags)` pairs — run via
 `dotnet test` (see README's "Running the tests" section).
+
+## 5. Resiliency
+
+The Gateway wraps its call to the Account Service in a Polly pipeline:
+circuit breaker (outermost) → 2s per-attempt timeout → 2 retries at a
+fixed 200ms delay (innermost). This exercise watches all three states —
+bounded failure, open circuit, recovery — against a real outage.
+
+**Stop the Account Service:**
+
+```
+$ docker compose stop account-service
+```
+
+**First few calls are bounded, not hanging** — each one retries through
+all 3 attempts (2s timeout × 3 + 200ms × 2 retry delay) before returning
+`503`:
+
+```
+$ time curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+    -d '{"eventId":"evt-cb-1","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+
+{"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
+real  0m6.761s   # bounded — never hangs indefinitely, and never a 500
+```
+
+**Trip the circuit open.** The breaker needs ≥4 calls with a ≥50%
+failure ratio within a 10s window. Firing exactly 4 sequentially doesn't
+reliably work — each bounded call above already takes ~6.7s, so by the
+time a 4th sequential call fires, the sampling window has moved on. Fire
+several **concurrently** instead, so they land in the same window
+(10 was used here, more than enough margin over the theoretical minimum
+of 4):
+
+```
+$ for i in 1 2 3 4 5 6 7 8 9 10; do
+    curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5099/events \
+      -H "Content-Type: application/json" \
+      -d "{\"eventId\":\"evt-cb-trip-$i\",\"accountId\":\"acct-cb-demo\",\"type\":\"CREDIT\",\"amount\":10,\"currency\":\"USD\",\"eventTimestamp\":\"2026-07-16T09:00:00Z\"}" &
+  done; wait
+# all ten print 503
+```
+
+**Confirm the circuit is open** — the next call fails near-instantly,
+with no network attempt at all (compare to the ~6.7s bounded calls above):
+
+```
+$ time curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+    -d '{"eventId":"evt-cb-check","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+
+{"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
+real  0m0.324s   # near-instant — no network attempt, the circuit is open
+```
+
+**Wait for the 5-second break duration, then recover:**
+
+```
+$ docker compose start account-service
+$ sleep 8   # break duration (5s) + healthcheck settling time, with margin
+
+$ curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+    -d '{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+
+{"eventId":"evt-cb-recovered","accountId":"acct-cb-demo","type":"CREDIT","amount":10,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00+00:00","metadata":null,"receivedAt":"2026-07-16T16:10:35.0646314+00:00"}
+real  0m0.704s   # HTTP 201 — the half-open trial call succeeded, circuit closed again
+```
+
+## 6. Graceful Degradation
+
+With the Account Service stopped, four distinct behaviors were confirmed
+against the `acct-verify-1` account from Section 1 (which already has
+existing events):
+
+```
+$ docker compose stop account-service
+
+$ curl -X POST http://localhost:5099/events -H "Content-Type: application/json" \
+    -d '{"eventId":"evt-outage-nopersist","accountId":"acct-verify-1","type":"CREDIT","amount":999,"currency":"USD","eventTimestamp":"2026-07-16T09:00:00Z"}'
+{"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
+# HTTP 503 — never hangs, never a 500
+
+$ curl http://localhost:5099/events/evt-outage-nopersist
+{"error":"not_found","message":"No event found with eventId 'evt-outage-nopersist'"}
+# HTTP 404 — the failed submission above was never persisted
+
+$ curl http://localhost:5099/events/evt-idem-1
+{"eventId":"evt-idem-1","accountId":"acct-verify-1", ...}
+# HTTP 200 — reads of existing, already-persisted data are entirely unaffected
+
+$ curl "http://localhost:5099/events?account=acct-verify-1"
+[{"eventId":"evt-idem-1", ...}, {"eventId":"evt-ooo-earliest", ...}, ...]
+# HTTP 200 — same: local-only read, doesn't depend on the Account Service
+
+$ curl http://localhost:5099/accounts/acct-verify-1/balance
+{"error":"account_service_unavailable","message":"The Account Service is currently unavailable."}
+# HTTP 503 — the balance passthrough does depend on the Account Service, and degrades clearly
+
+$ docker compose start account-service   # leave the stack healthy again
+```

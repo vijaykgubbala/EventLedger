@@ -104,7 +104,7 @@ follows one coherent story rather than disconnected throwaway examples).
 
 ### Phase 5: Resiliency + Graceful Degradation sections
 
-- [ ] Resiliency: the full timed circuit-breaker exercise. `docker compose stop account-service`,
+- [x] Resiliency: the full timed circuit-breaker exercise. `docker compose stop account-service`,
   then fire 4+ `POST /events` requests in quick succession (enough to
   hit the circuit breaker's 4-call minimum throughput within its 10s
   sampling window), showing the first call(s) take ~2s (bounded by the
@@ -116,7 +116,7 @@ follows one coherent story rather than disconnected throwaway examples).
   timing/response shapes before writing the guide's expected-output
   text — do not describe timing from the architecture doc's numbers
   alone without observing it actually happen.
-- [ ] Graceful Degradation: with `account-service` still stopped (or
+- [x] Graceful Degradation: with `account-service` still stopped (or
   stopped again), show `POST /events` → `503` and a follow-up
   `GET /events/{eventId}` for that same `eventId` → `404` (nothing
   persisted); `GET /events/{id}` and `GET /events?account=` for
