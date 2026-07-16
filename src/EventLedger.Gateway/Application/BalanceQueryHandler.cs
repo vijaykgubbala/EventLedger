@@ -2,7 +2,7 @@ using Polly;
 
 namespace EventLedger.Gateway.Application;
 
-public sealed class BalanceQueryHandler(IHttpClientFactory httpClientFactory)
+public sealed class BalanceQueryHandler(IHttpClientFactory httpClientFactory, ILogger<BalanceQueryHandler> logger)
 {
     public async Task<BalanceQueryResult> GetBalanceAsync(string accountId, CancellationToken cancellationToken = default)
     {
@@ -14,6 +14,7 @@ public sealed class BalanceQueryHandler(IHttpClientFactory httpClientFactory)
         }
         catch (Exception ex) when (ex is HttpRequestException or ExecutionRejectedException)
         {
+            logger.LogWarning(ex, "Account Service unreachable for accountId {AccountId}", accountId);
             return new BalanceQueryResult(BalanceQueryOutcome.AccountServiceUnavailable, null);
         }
 
@@ -21,6 +22,8 @@ public sealed class BalanceQueryHandler(IHttpClientFactory httpClientFactory)
         {
             if (!response.IsSuccessStatusCode)
             {
+                logger.LogWarning(
+                    "Account Service returned {StatusCode} for accountId {AccountId}", response.StatusCode, accountId);
                 return new BalanceQueryResult(BalanceQueryOutcome.AccountServiceUnavailable, null);
             }
 

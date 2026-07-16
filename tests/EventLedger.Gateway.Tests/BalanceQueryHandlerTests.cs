@@ -1,15 +1,19 @@
 using System.Net;
 using EventLedger.Gateway.Application;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EventLedger.Gateway.Tests;
 
 public class BalanceQueryHandlerTests
 {
+    private static BalanceQueryHandler CreateHandler(HttpMessageHandler accountServiceHandler) =>
+        new(new StubHttpClientFactory(accountServiceHandler), NullLogger<BalanceQueryHandler>.Instance);
+
     [Fact]
     public async Task GetBalanceAsync_AccountServiceReturnsSuccess_ReturnsBodyVerbatim()
     {
         const string body = """{"accountId":"acct-1","balance":150}""";
-        var handler = new BalanceQueryHandler(new StubHttpClientFactory(new StubResponseHandler(HttpStatusCode.OK, body)));
+        var handler = CreateHandler(new StubResponseHandler(HttpStatusCode.OK, body));
 
         var result = await handler.GetBalanceAsync("acct-1");
 
@@ -20,7 +24,7 @@ public class BalanceQueryHandlerTests
     [Fact]
     public async Task GetBalanceAsync_AccountServiceUnreachable_ReturnsUnavailable()
     {
-        var handler = new BalanceQueryHandler(new StubHttpClientFactory(new ThrowingHandler()));
+        var handler = CreateHandler(new ThrowingHandler());
 
         var result = await handler.GetBalanceAsync("acct-1");
 
@@ -31,7 +35,7 @@ public class BalanceQueryHandlerTests
     [Fact]
     public async Task GetBalanceAsync_AccountServiceReturnsNonSuccessStatus_ReturnsUnavailable()
     {
-        var handler = new BalanceQueryHandler(new StubHttpClientFactory(new StubResponseHandler(HttpStatusCode.InternalServerError, string.Empty)));
+        var handler = CreateHandler(new StubResponseHandler(HttpStatusCode.InternalServerError, string.Empty));
 
         var result = await handler.GetBalanceAsync("acct-1");
 
@@ -46,7 +50,7 @@ public class BalanceQueryHandlerTests
     public async Task GetBalanceAsync_AccountIdContainsReservedCharacters_EscapesBeforeSendingRequest()
     {
         var captor = new CapturingHandler();
-        var handler = new BalanceQueryHandler(new StubHttpClientFactory(captor));
+        var handler = CreateHandler(captor);
 
         await handler.GetBalanceAsync("acct-1?evil=1");
 
