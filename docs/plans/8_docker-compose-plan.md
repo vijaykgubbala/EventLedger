@@ -77,12 +77,12 @@ fix here.
 
 ### Phase 3: README
 
-- [ ] Fill in `README.md`'s existing `**TODO — Docker Compose:**` line
+- [x] Fill in `README.md`'s existing `**TODO — Docker Compose:**` line
   under "Running the services" with the real command
   (`docker compose up --build`) plus one line each on what to expect
   (both services healthy, ports 5099/5199 reachable) and how to stop
   (`docker compose down`).
-- [ ] Fill in the existing `**TODO — manual:**` lines with the real,
+- [x] Fill in the existing `**TODO — manual:**` lines with the real,
   already-correct commands
   (`dotnet run --project src/EventLedger.AccountService` then
   `dotnet run --project src/EventLedger.Gateway`, in that order — mirrors
