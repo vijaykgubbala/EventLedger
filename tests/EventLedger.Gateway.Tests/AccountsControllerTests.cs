@@ -31,7 +31,7 @@ public class AccountsControllerTests : IDisposable
     public async Task GetBalance_AccountServiceReachable_ReturnsBalanceBodyVerbatim()
     {
         const string body = """{"accountId":"acct-1","balance":150}""";
-        using var factory = CreateFactory(new StubBalanceHandler(HttpStatusCode.OK, body));
+        using var factory = CreateFactory(new StubResponseHandler(HttpStatusCode.OK, body));
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/accounts/acct-1/balance");
@@ -43,7 +43,7 @@ public class AccountsControllerTests : IDisposable
     [Fact]
     public async Task GetBalance_AccountServiceUnreachable_Returns503WithStandardEnvelope()
     {
-        using var factory = CreateFactory(new StubBalanceHandler(HttpStatusCode.InternalServerError, string.Empty));
+        using var factory = CreateFactory(new StubResponseHandler(HttpStatusCode.InternalServerError, string.Empty));
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/accounts/acct-1/balance");
@@ -52,12 +52,6 @@ public class AccountsControllerTests : IDisposable
         var error = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
         Assert.Equal("account_service_unavailable", error!.Error);
         Assert.Equal("The Account Service is currently unavailable.", error.Message);
-    }
-
-    private sealed class StubBalanceHandler(HttpStatusCode status, string body) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
     }
 
     private sealed record ErrorResponseDto(string Error, string Message);

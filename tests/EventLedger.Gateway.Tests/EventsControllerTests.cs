@@ -246,20 +246,21 @@ public class EventsControllerTests : IDisposable
 
     // RES-7: GET /events/{id} and GET /events?account=... are served entirely from the Gateway's
     // own local data and must keep working during an Account Service outage. Seeds a record while
-    // the Account Service is reachable, then reopens the same database against an always-failing
-    // handler and confirms both read endpoints still return the seeded data unchanged.
+    // the Account Service is reachable, then flips the same handler to always-failing and confirms
+    // both read endpoints still return the seeded data unchanged — a single factory/handler is
+    // enough since EventQueryHandler never calls the Account Service either way, but flipping the
+    // handler still documents the outage this test is meant to prove is irrelevant to these reads.
     [Fact]
     public async Task GetEventById_And_ListByAccount_UnaffectedByAccountServiceOutage()
     {
-        using (var seedFactory = CreateFactory())
-        using (var seedClient = seedFactory.CreateClient())
-        {
-            var seedResponse = await seedClient.PostAsJsonAsync("/events", ValidPayload("evt-read-during-outage"));
-            Assert.Equal(HttpStatusCode.Created, seedResponse.StatusCode);
-        }
-
-        using var factory = CreateFactory(new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue));
+        var handler = new FlakyAccountServiceHandler(failuresBeforeSuccess: 0);
+        using var factory = CreateFactory(handler);
         using var client = factory.CreateClient();
+
+        var seedResponse = await client.PostAsJsonAsync("/events", ValidPayload("evt-read-during-outage"));
+        Assert.Equal(HttpStatusCode.Created, seedResponse.StatusCode);
+
+        handler.FailuresBeforeSuccess = int.MaxValue;
 
         var byIdResponse = await client.GetAsync("/events/evt-read-during-outage");
         Assert.Equal(HttpStatusCode.OK, byIdResponse.StatusCode);
