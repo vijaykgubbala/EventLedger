@@ -30,9 +30,8 @@ public class HealthControllerTests
         // unreachable at boot — so the directory must exist (and EnsureCreated() must succeed)
         // before the factory starts. Connectivity is broken only afterward, isolating the
         // failure to the /health request itself rather than crashing the whole host.
-        var tempDir = Path.Combine(Path.GetTempPath(), $"gateway-health-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
-        var connectionString = $"Data Source={Path.Combine(tempDir, "test.db")}";
+        var dbPath = Path.Combine(Path.GetTempPath(), $"gateway-health-test-{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={dbPath}";
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             builder.ConfigureServices(services =>
@@ -41,12 +40,11 @@ public class HealthControllerTests
                 services.AddDbContext<GatewayDbContext>(opt => opt.UseSqlite(connectionString));
             }));
 
-        // Forces host startup (and EnsureGatewayDatabaseCreated()) to run while the directory
-        // still exists.
+        // Forces host startup (and EnsureGatewayDatabaseCreated()) to run while the file exists.
         _ = factory.Services;
 
         SqliteConnection.ClearAllPools();
-        Directory.Delete(tempDir, recursive: true);
+        File.Delete(dbPath);
 
         using var client = factory.CreateClient();
         var response = await client.GetAsync("/health");
