@@ -111,18 +111,21 @@ crash-then-retry idempotency guarantee ("Verified" acceptance item).
 
 ### Phase 3: RES-6 / RES-7 verification (extend `EventsControllerTests.cs`)
 
-- [ ] Write test: `PostEvents_AccountServiceUnreachable_Returns503AndPersistsNothing`
+- [x] Write test: `PostEvents_AccountServiceUnreachable_Returns503AndPersistsNothing`
   — using `CreateFactory(new FlakyAccountServiceHandler(int.MaxValue))`,
   `POST /events` returns `503`, then a follow-up `GET /events/{eventId}`
   for the same `eventId` returns `404` (proving nothing was persisted,
   not just that the response code was right).
-- [ ] Write test: `GetEventById_And_ListByAccount_UnaffectedByAccountServiceOutage`
+- [x] Write test: `GetEventById_And_ListByAccount_UnaffectedByAccountServiceOutage`
   — seed a record via a factory with a working Account Service stub
   first, then reopen the factory with
   `FlakyAccountServiceHandler(int.MaxValue)` and confirm both
   `GET /events/{id}` and `GET /events?account=...` still return `200`
   with the expected data, proving these reads never touch the Account
   Service even while it's down.
+  - Both passed against existing production code with no changes needed,
+    confirming RES-6/RES-7 were already correctly implemented from
+    issues #2 and #6.
 
 ### Phase 4: Crash-then-retry idempotency verification
 

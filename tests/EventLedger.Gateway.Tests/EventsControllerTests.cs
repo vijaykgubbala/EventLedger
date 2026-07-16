@@ -227,6 +227,51 @@ public class EventsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    // RES-6: an Account Service outage must not just return 503 — it must leave nothing behind.
+    // Asserting the follow-up GET returns 404 (not just that POST returned 503) is what actually
+    // proves persistence never happened, rather than just that the response code was right.
+    [Fact]
+    public async Task PostEvents_AccountServiceUnreachable_Returns503AndPersistsNothing()
+    {
+        using var factory = CreateFactory(new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-outage-no-persist"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+
+        var followUp = await client.GetAsync("/events/evt-outage-no-persist");
+        Assert.Equal(HttpStatusCode.NotFound, followUp.StatusCode);
+    }
+
+    // RES-7: GET /events/{id} and GET /events?account=... are served entirely from the Gateway's
+    // own local data and must keep working during an Account Service outage. Seeds a record while
+    // the Account Service is reachable, then reopens the same database against an always-failing
+    // handler and confirms both read endpoints still return the seeded data unchanged.
+    [Fact]
+    public async Task GetEventById_And_ListByAccount_UnaffectedByAccountServiceOutage()
+    {
+        using (var seedFactory = CreateFactory())
+        using (var seedClient = seedFactory.CreateClient())
+        {
+            var seedResponse = await seedClient.PostAsJsonAsync("/events", ValidPayload("evt-read-during-outage"));
+            Assert.Equal(HttpStatusCode.Created, seedResponse.StatusCode);
+        }
+
+        using var factory = CreateFactory(new FlakyAccountServiceHandler(failuresBeforeSuccess: int.MaxValue));
+        using var client = factory.CreateClient();
+
+        var byIdResponse = await client.GetAsync("/events/evt-read-during-outage");
+        Assert.Equal(HttpStatusCode.OK, byIdResponse.StatusCode);
+        var byIdBody = await byIdResponse.Content.ReadFromJsonAsync<EventResponseDto>();
+        Assert.Equal("evt-read-during-outage", byIdBody!.EventId);
+
+        var byAccountResponse = await client.GetAsync("/events?account=acct-1");
+        Assert.Equal(HttpStatusCode.OK, byAccountResponse.StatusCode);
+        var byAccountBody = await byAccountResponse.Content.ReadFromJsonAsync<List<EventResponseDto>>();
+        Assert.Contains(byAccountBody!, e => e.EventId == "evt-read-during-outage");
+    }
+
     // Issues enough POST /events calls to exceed the circuit breaker's minimum throughput (4)
     // at a 100% failure ratio, tripping it open. Shared by RES-3 and RES-4, which both need the
     // circuit open before exercising what happens next.
