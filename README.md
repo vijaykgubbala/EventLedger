@@ -66,6 +66,7 @@ explanation.
 | `POST` | `/events` | Submit a transaction event |
 | `GET` | `/events/{id}` | Retrieve a single event by its ID |
 | `GET` | `/events?account={accountId}` | List events for an account, ordered by `eventTimestamp` |
+| `GET` | `/accounts/{accountId}/balance` | Get the current balance for an account (passthrough to the Account Service) |
 | `GET` | `/health` | Health check |
 
 ### Account Service (internal)
