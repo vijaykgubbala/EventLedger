@@ -6,11 +6,6 @@ and duplicate event delivery, and to degrade gracefully when the Account
 Service is unavailable. Built against the requirements in
 [docs/Assignment - Senior Software Engineer - AI.docx](docs/Assignment%20-%20Senior%20Software%20Engineer%20-%20AI.docx).
 
-> **Status:** Application code, resiliency, and Docker Compose are
-> implemented. Setup prerequisites and the test-run command below are
-> still stubbed with `TODO` — see the "Running the services" section for
-> working startup commands.
-
 ## Architecture overview
 
 ```
@@ -71,6 +66,7 @@ explanation.
 | `POST` | `/events` | Submit a transaction event |
 | `GET` | `/events/{id}` | Retrieve a single event by its ID |
 | `GET` | `/events?account={accountId}` | List events for an account, ordered by `eventTimestamp` |
+| `GET` | `/accounts/{accountId}/balance` | Get the current balance for an account (passthrough to the Account Service) |
 | `GET` | `/health` | Health check |
 
 ### Account Service (internal)
@@ -119,10 +115,18 @@ primary for a system at this scale, is in
 
 ## Setup
 
-**TODO:** prerequisites and dependency installation steps — to be filled in
-once the ASP.NET Core projects exist (see
-[standards/backend-architecture.md](standards/backend-architecture.md) for
-the planned project scaffold).
+**Docker Compose path (primary, recommended):** only
+[Docker](https://docs.docker.com/get-docker/) with Compose support (bundled
+with Docker Desktop, or the `docker-compose-plugin` package on Linux) is
+required — no local .NET SDK needed. See "Running the services" below.
+
+**Manual / local-tooling path:** the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+is required if you want to run either service directly with `dotnet run`,
+or run the automated test suite with `dotnet test` — see "Running the
+services" and "Running the tests" below for the exact commands. No other
+local dependencies (e.g. a separate database server) are needed; each
+service creates its own file-based SQLite database automatically on
+first run.
 
 ## Running the services
 
