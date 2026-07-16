@@ -84,11 +84,13 @@ already exists and is correct) — every change is test-only or docs-only.
 
 ### Phase 4: Final verification
 
-- [ ] Run `dotnet test` from repo root. Confirm the full suite passes
+- [x] Run `dotnet test` from repo root. Confirm the full suite passes
   with the 2 new tests included (92 existing + 2 new = 94 total), zero
   failures, zero undocumented setup steps.
-- [ ] Run `dotnet format --verify-no-changes --no-restore`, confirm exit
+  - Confirmed: 94/94 passed (29 Account Service + 65 Gateway), 0 failed.
+- [x] Run `dotnet format --verify-no-changes --no-restore`, confirm exit
   code 0.
+  - Confirmed: exit code 0, no formatting drift.
 
 ## Testing Strategy
 
