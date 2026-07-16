@@ -57,6 +57,7 @@ public static class ServiceCollectionExtensions
         builder.Services.AddScoped<SubmitEventHandler>();
         builder.Services.AddScoped<EventQueryHandler>();
         builder.Services.AddScoped<HealthCheckHandler>();
+        builder.Services.AddScoped<BalanceQueryHandler>();
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService(serviceName))
             .WithTracing(tracing => tracing

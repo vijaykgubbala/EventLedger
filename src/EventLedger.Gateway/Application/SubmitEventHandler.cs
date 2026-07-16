@@ -36,7 +36,7 @@ public sealed class SubmitEventHandler(
         try
         {
             response = await client.PostAsJsonAsync(
-                $"/accounts/{accountId}/transactions",
+                $"/accounts/{Uri.EscapeDataString(accountId)}/transactions",
                 new { eventId, accountId, type = type.ToWireString(), amount },
                 cancellationToken);
         }

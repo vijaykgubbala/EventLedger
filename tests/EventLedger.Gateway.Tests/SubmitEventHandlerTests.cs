@@ -22,7 +22,7 @@ public class SubmitEventHandlerTests : IDisposable
     private GatewayDbContext CreateContext() => _fixture.CreateContext();
 
     private static SubmitEventHandler CreateHandler(GatewayDbContext db, HttpStatusCode accountServiceStatus = HttpStatusCode.Created) =>
-        new(db, new StubHttpClientFactory(accountServiceStatus), NullLogger<SubmitEventHandler>.Instance);
+        new(db, new StubHttpClientFactory(new CountingStubHandler(accountServiceStatus)), NullLogger<SubmitEventHandler>.Instance);
 
     private static SubmitEventHandler CreateHandler(GatewayDbContext db, CountingStubHandler handler) =>
         new(db, new StubHttpClientFactory(handler), NullLogger<SubmitEventHandler>.Instance);
@@ -129,22 +129,6 @@ public class SubmitEventHandlerTests : IDisposable
         var result = await handler.SubmitAsync("evt-7", "acct-1", TransactionType.Credit, 0m, "USD", Timestamp, null);
 
         Assert.Equal(SubmitEventOutcome.Fault, result.Outcome);
-    }
-
-    private sealed class StubHttpClientFactory : IHttpClientFactory
-    {
-        private readonly HttpClient _client;
-
-        public StubHttpClientFactory(HttpStatusCode status) : this(new CountingStubHandler(status))
-        {
-        }
-
-        public StubHttpClientFactory(CountingStubHandler handler)
-        {
-            _client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:5199") };
-        }
-
-        public HttpClient CreateClient(string name) => _client;
     }
 
     private sealed class CountingStubHandler(HttpStatusCode status) : HttpMessageHandler
