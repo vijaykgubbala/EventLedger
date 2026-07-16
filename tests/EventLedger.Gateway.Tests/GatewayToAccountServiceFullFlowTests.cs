@@ -231,4 +231,58 @@ public class GatewayToAccountServiceFullFlowTests : IDisposable
 
         Assert.Equal(110m, balance);
     }
+
+    // "Verified" acceptance item for issue #7: if the Gateway crashes after the Account Service
+    // confirms a transaction but before the Gateway's own local insert commits, a client retry
+    // must not double-apply. Recreates that exact post-crash state directly rather than via fault
+    // injection: POSTing straight to the Account Service (bypassing the Gateway) leaves the
+    // Account Service confirmed and the Gateway's own Events table empty for this eventId — the
+    // same state a crash between "Account Service call succeeded" and "SaveChangesAsync" would
+    // leave. The "retry" is then an ordinary POST /events call against the Gateway, which finds no
+    // local record and calls the Account Service again; the Account Service's own eventId unique
+    // constraint returns its existing confirmation instead of applying twice (relies on that
+    // constraint, not an outbox — see architecture/vertical-architecture.md's confirm-before-persist
+    // decision).
+    [Fact]
+    public async Task PostEvents_AccountServiceAlreadyConfirmedBeforeGatewayCrash_RetrySucceedsWithoutDoubleApplying()
+    {
+        var factories = CreateFactories();
+        await using var accountServiceFactory = factories.accountService;
+        await using var gatewayFactory = factories.gateway;
+
+        using var accountServiceClient = accountServiceFactory.CreateClient();
+        var preCrashResponse = await accountServiceClient.PostAsJsonAsync("/accounts/acct-crash-1/transactions", new
+        {
+            eventId = "evt-crash-1",
+            accountId = "acct-crash-1",
+            type = "CREDIT",
+            amount = 200m
+        });
+        Assert.Equal(HttpStatusCode.Created, preCrashResponse.StatusCode);
+
+        using var gatewayClient = gatewayFactory.CreateClient();
+        var retryResponse = await gatewayClient.PostAsJsonAsync("/events", new
+        {
+            eventId = "evt-crash-1",
+            accountId = "acct-crash-1",
+            type = "CREDIT",
+            amount = 200m,
+            currency = "USD",
+            eventTimestamp = "2026-05-15T14:02:11Z"
+        });
+
+        Assert.Equal(HttpStatusCode.Created, retryResponse.StatusCode);
+
+        using var gatewayScope = gatewayFactory.Services.CreateScope();
+        var gatewayDb = gatewayScope.ServiceProvider.GetRequiredService<GatewayDbContext>();
+        Assert.Equal(1, await gatewayDb.Events.CountAsync(e => e.EventId == "evt-crash-1"));
+
+        using var accountServiceScope = accountServiceFactory.Services.CreateScope();
+        var balanceHandler = accountServiceScope.ServiceProvider
+            .GetRequiredService<AccountServiceAssembly::EventLedger.AccountService.Application.BalanceQueryHandler>();
+        var balance = await balanceHandler.GetBalanceAsync("acct-crash-1");
+
+        // The definitive proof: exactly one application of the 200 credit, not two.
+        Assert.Equal(200m, balance);
+    }
 }

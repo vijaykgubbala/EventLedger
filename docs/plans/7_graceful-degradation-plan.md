@@ -129,7 +129,7 @@ crash-then-retry idempotency guarantee ("Verified" acceptance item).
 
 ### Phase 4: Crash-then-retry idempotency verification
 
-- [ ] Write test:
+- [x] Write test:
   `PostEvents_AccountServiceAlreadyConfirmedBeforeGatewayCrash_RetrySucceedsWithoutDoubleApplying`
   in `GatewayToAccountServiceFullFlowTests.cs`, reusing the existing
   `CreateFactories()` helper (in-process `WebApplicationFactory` pair,
@@ -162,6 +162,10 @@ crash-then-retry idempotency guarantee ("Verified" acceptance item).
   > wiring that file already has and `EventsControllerTests.cs`'s
   > stub-handler tests don't — a refinement of Q5's file-placement
   > answer, not a reversal of it.
+  >
+  > Passed against existing production code with no changes needed,
+  > confirming the Account Service's own `eventId` uniqueness already
+  > guarantees this.
 
 ### Phase 5: Docs
 
