@@ -127,16 +127,16 @@ follows one coherent story rather than disconnected throwaway examples).
 
 ### Phase 6: Link from README, final verification, teardown
 
-- [ ] Add exactly one line to `README.md` linking to
+- [x] Add exactly one line to `README.md` linking to
   `docs/verification-guide.md` (placed near the existing "Running the
   tests" section, since both are evaluator-facing verification content)
   — no other README changes, per the brainstorm's explicit "cross-
   reference, don't restate" decision.
-- [ ] Full read-through of `docs/verification-guide.md` top to bottom,
+- [x] Full read-through of `docs/verification-guide.md` top to bottom,
   confirming every command's written expected-output text matches what
   was actually observed live during Phases 2–5 (not just "looks
   plausible").
-- [ ] `docker compose down` — leave no stray containers running.
+- [x] `docker compose down` — leave no stray containers running.
 
 ## Testing Strategy
 
