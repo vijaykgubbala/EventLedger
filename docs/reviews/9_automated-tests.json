@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "timestamp": "2026-07-16T15:00:00Z",
+    "branch": "9_automated-tests",
+    "commitSha": "b97fddc45e0630d29c4f6398a2baebb16dd7fca8",
+    "issue": 9,
+    "filesReviewed": [
+      ".claude/agents/review-testing.md",
+      "README.md",
+      "docs/brainstorms/9_automated-tests-brainstorm.md",
+      "docs/plans/9_automated-tests-plan.md",
+      "tests/EventLedger.Gateway.Tests/EventValidatorTests.cs",
+      "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs"
+    ],
+    "agentsRun": ["review-correctness", "review-dotnet", "review-testing", "review-security", "review-maintainability"],
+    "agentsSkipped": []
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "warning",
+      "checklistItem": "validation",
+      "file": "tests/EventLedger.Gateway.Tests/EventsControllerTests.cs",
+      "line": 109,
+      "summary": "The new malformed-eventTimestamp HTTP test (and 2 of its 3 sibling validation-rejection tests) only assert the error code, not that message is a meaningful, non-empty explanation.",
+      "detail": "A passing test for this checklist item should assert body.Message is non-null/non-empty (as PostEvents_InvalidPayload_Returns400WithErrorShape at line 70 already does for the amount<=0 case) for every one of the 4 validation-rejection HTTP tests, not just one of them -- otherwise a regression that returned message: \"\" or message: null alongside the correct error code would pass undetected. This is a pre-existing pattern in 2 of the 3 tests this diff's new test mirrors (PostEvents_MissingRequiredField_Returns400WithErrorShape line 84, PostEvents_InvalidType_Returns400WithErrorShape line 97), not introduced by this diff, but the new malformed-eventTimestamp test (line 109) was an opportunity to close it and instead perpetuated the weaker pattern.",
+      "agent": "review-testing",
+      "disposition": {"status": "addressed", "reasoning": "Added Assert.NotNull(body.Message) to the 3 tests missing it (missing-field, invalid-type, malformed-eventTimestamp). Full suite (94 tests) passes.", "commit": "e673371", "issue": null, "timestamp": "2026-07-16T15:15:00Z"}
+    }
+  ],
+  "summary": {
+    "totalFindings": 1,
+    "critical": 0,
+    "warning": 1,
+    "suggestion": 0
+  }
+}

@@ -169,13 +169,26 @@ dotnet run --project src/EventLedger.Gateway
 
 ## Running the tests
 
-**TODO:**
-
 ```
 dotnet test
 ```
 
-Test coverage expectations (all core functionality, resiliency behavior,
-trace propagation, and at least one full Gateway→Account Service
-integration test) are tracked by the `test-dotnet` skill — see
-[.claude/skills/test-dotnet/SKILL.md](.claude/skills/test-dotnet/SKILL.md).
+Runs both test projects (94 tests total) with no manual setup — every
+fixture creates and cleans up its own temp-file SQLite database.
+
+The suite is checked against the assignment's required checklist item by
+item:
+
+| # | Requirement | Covered by |
+|---|---|---|
+| 1 | Idempotency (real SQLite) | `SubmitEventHandlerTests.cs`, `GatewayToAccountServiceFullFlowTests.cs` |
+| 2 | Out-of-order handling | `EventsControllerTests.cs`, `GatewayToAccountServiceFullFlowTests.cs` |
+| 3 | Balance computation incl. zero-transaction edge case | `BalanceQueryHandlerTests.cs` (Account Service) |
+| 4 | Validation, each rejection case | `EventValidatorTests.cs` (unit level), `EventsControllerTests.cs` (HTTP level) |
+| 5 | Resiliency (circuit breaker + `503`) | `EventsControllerTests.cs` |
+| 6 | Trace propagation | `GatewayToAccountServiceFullFlowTests.cs` |
+| 7 | Full Gateway→Account Service integration | `GatewayToAccountServiceFullFlowTests.cs` — 4 tests over two real, wired `WebApplicationFactory` instances |
+| 8 | Runnable via `dotnet test`, no manual setup | this section — 94/94 passing, zero setup steps |
+
+Full checklist definition:
+[.claude/agents/review-testing.md](.claude/agents/review-testing.md).

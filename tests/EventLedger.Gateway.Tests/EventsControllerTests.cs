@@ -81,6 +81,7 @@ public class EventsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
         Assert.Equal("validation_error", body!.Error);
+        Assert.NotNull(body.Message);
     }
 
     [Fact]
@@ -94,6 +95,21 @@ public class EventsControllerTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
         Assert.Equal("validation_error", body!.Error);
+        Assert.NotNull(body.Message);
+    }
+
+    [Fact]
+    public async Task PostEvents_MalformedEventTimestamp_Returns400WithErrorShape()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var response = await PostWithTimestamp(client, "evt-malformed-ts", "not-a-date");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
+        Assert.Equal("validation_error", body!.Error);
+        Assert.NotNull(body.Message);
     }
 
     [Fact]

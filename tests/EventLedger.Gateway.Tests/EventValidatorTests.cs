@@ -42,6 +42,16 @@ public class EventValidatorTests
         Assert.Contains(failures, f => f.Field == "amount");
     }
 
+    [Fact]
+    public void Validate_MalformedEventTimestamp_Fails()
+    {
+        var (eventId, accountId, type, amount, currency, _) = ValidPayload();
+
+        var failures = _validator.Validate(eventId, accountId, type, amount, currency, "not-a-date");
+
+        Assert.Contains(failures, f => f.Field == "eventTimestamp");
+    }
+
     [Theory]
     [InlineData("credit")]
     [InlineData("Credit")]
