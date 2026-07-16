@@ -56,7 +56,7 @@ only line of defense against a malformed row landing in its own table.
 
 ## Balance computation
 
-`GET /accounts/{accountId}/balance` computes:
+`GET /accounts/{accountId}/balance` computes the logical equivalent of:
 
 ```sql
 SELECT COALESCE(SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END), 0)
@@ -69,6 +69,21 @@ This is a live aggregate over the account's transaction rows, computed on
 every request — never a stored running total. See
 [vertical-architecture.md](vertical-architecture.md#core-decision-balance-computed-on-read)
 for why this is required for out-of-order correctness.
+
+**Implementation note**: EF Core's SQLite provider does not support
+translating `SUM`/`Average` over a `decimal`-typed column into SQL — SQLite
+has no native aggregate for the `TEXT`-affinity storage EF Core uses to
+preserve `decimal` precision (see
+[docs/patterns/2026-07-15-sqlite-decimal-check-constraint-affinity.md](../docs/patterns/2026-07-15-sqlite-decimal-check-constraint-affinity.md)
+for the related `CHECK`-constraint issue). `BalanceQueryHandler` therefore
+filters by `account_id` in SQL, materializes the matching `(type, amount)`
+rows, and sums them client-side in .NET using `decimal` arithmetic
+throughout. This is also the more correct choice for money, not just a
+workaround: summing via a SQL `CAST(... AS REAL)` would aggregate through
+IEEE-754 `double`, introducing floating-point rounding risk that a
+client-side `decimal` sum avoids entirely. This system's scale (a handful
+of transactions per account, single-process, local SQLite) means
+client-side aggregation carries no meaningful cost.
 
 ## Trace propagation (inbound)
 

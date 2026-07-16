@@ -70,17 +70,17 @@ dependency, exercised indirectly by every later phase's tests.
 
 ### Phase 3: Account Service — Application layer
 
-- [ ] Test: `ApplyTransactionHandler` — new `eventId` → inserts a row, returns the new record (unit, Phase 3)
-- [ ] Test: `ApplyTransactionHandler` — duplicate `eventId` → returns the existing record, no second row (ID-3) (integration, Phase 3)
-- [ ] Test: `ApplyTransactionHandler` — two concurrent calls with the same `eventId` (`Task.WhenAll`) → exactly one row exists afterward, both calls return the same record (ID-2, Account-Service side) (integration, Phase 3)
-- [ ] Test: `ApplyTransactionHandler` — an insert that violates the backstop `CHECK` constraint (bypassing normal validation, e.g. constructing the entity directly in the test) → `500`-mapped result, logged at `Error` (Decisions Made, item 5) (integration, Phase 3)
-- [ ] Test: `BalanceQueryHandler` — mixed `CREDIT`/`DEBIT` transactions → `SUM(CREDIT) − SUM(DEBIT)` (FB-10) (unit, Phase 3)
-- [ ] Test: `BalanceQueryHandler` — zero transactions for an account → balance `0`, not an error (FB-10 edge case) (unit, Phase 3)
-- [ ] Test: `AccountDetailsHandler` — returns `accountId` + full transaction list (FB-11) (unit, Phase 3)
-- [ ] Implement: `src/EventLedger.AccountService/Application/ApplyTransactionHandler.cs` — attempt insert; catch `DbUpdateException`; distinguish a `UNIQUE` violation (refetch by `EventId`, return existing, `200`) from a `CHECK` violation (log `Error`, return a result the controller maps to `500`) using the SQLite error code, not just "any `DbUpdateException`"
-- [ ] Implement: `src/EventLedger.AccountService/Application/BalanceQueryHandler.cs` — `SUM(CASE WHEN Type = Credit ...) - SUM(CASE WHEN Type = Debit ...)` aggregate query per [architecture/account-architecture.md](../../architecture/account-architecture.md#balance-computation)
-- [ ] Implement: `src/EventLedger.AccountService/Application/AccountDetailsHandler.cs` — transaction list + balance for one `accountId`
-- [ ] Implement: extend `AddAccountServiceInfrastructure(...)` with explicit `builder.Services.AddScoped<ApplyTransactionHandler>();`, `AddScoped<BalanceQueryHandler>();`, `AddScoped<AccountDetailsHandler>();` (Decisions Made, item 8)
+- [x] Test: `ApplyTransactionHandler` — new `eventId` → inserts a row, returns the new record (unit, Phase 3)
+- [x] Test: `ApplyTransactionHandler` — duplicate `eventId` → returns the existing record, no second row (ID-3) (integration, Phase 3)
+- [x] Test: `ApplyTransactionHandler` — two concurrent calls with the same `eventId` (`Task.WhenAll`) → exactly one row exists afterward, both calls return the same record (ID-2, Account-Service side) (integration, Phase 3)
+- [x] Test: `ApplyTransactionHandler` — an insert that violates the backstop `CHECK` constraint (bypassing normal validation, e.g. constructing the entity directly in the test) → `500`-mapped result, logged at `Error` (Decisions Made, item 5) (integration, Phase 3)
+- [x] Test: `BalanceQueryHandler` — mixed `CREDIT`/`DEBIT` transactions → `SUM(CREDIT) − SUM(DEBIT)` (FB-10) (unit, Phase 3)
+- [x] Test: `BalanceQueryHandler` — zero transactions for an account → balance `0`, not an error (FB-10 edge case) (unit, Phase 3)
+- [x] Test: `AccountDetailsHandler` — returns `accountId` + full transaction list (FB-11) (unit, Phase 3)
+- [x] Implement: `src/EventLedger.AccountService/Application/ApplyTransactionHandler.cs` — attempt insert; catch `DbUpdateException`; distinguish a `UNIQUE` violation (refetch by `EventId`, return existing, `200`) from a `CHECK` violation (log `Error`, return a result the controller maps to `500`) using the SQLite error code, not just "any `DbUpdateException`". Distinguishes via `SqliteException.SqliteExtendedErrorCode == 2067` (`SQLITE_CONSTRAINT_UNIQUE`) in an exception filter.
+- [x] Implement: `src/EventLedger.AccountService/Application/BalanceQueryHandler.cs`. **Deviation from original plan text**: a server-side `SUM(CASE WHEN ...)` aggregate query is not achievable — EF Core's SQLite provider throws `NotSupportedException` for `SumAsync` over a `decimal` column. Filters by `account_id` in SQL, then sums client-side in .NET (also the more correct choice for money — avoids `double` rounding risk). See [docs/patterns/2026-07-15-sqlite-datetimeoffset-orderby.md](../patterns/2026-07-15-sqlite-datetimeoffset-orderby.md) and the updated [architecture/account-architecture.md#balance-computation](../../architecture/account-architecture.md#balance-computation).
+- [x] Implement: `src/EventLedger.AccountService/Application/AccountDetailsHandler.cs` — transaction list + balance for one `accountId`, reusing `BalanceQueryHandler`. **Deviation**: ordering by `AppliedAt` (a `DateTimeOffset`) also isn't translatable server-side under SQLite (`NotSupportedException` on `OrderBy`) — materializes then orders client-side; same pattern doc as above.
+- [x] Implement: extend `AddAccountServiceInfrastructure(...)` with explicit `builder.Services.AddScoped<ApplyTransactionHandler>();`, `AddScoped<BalanceQueryHandler>();`, `AddScoped<AccountDetailsHandler>();` (Decisions Made, item 8)
 
 ### Phase 4: Gateway — Application layer
 
