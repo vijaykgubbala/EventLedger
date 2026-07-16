@@ -46,7 +46,7 @@ public sealed class SubmitEventHandler(
             // rejections — a timed-out attempt (TimeoutRejectedException) or an open circuit
             // (BrokenCircuitException) — both are "couldn't reach the Account Service" from the
             // caller's perspective, same as a network-level HttpRequestException.
-            logger.LogError(ex, "Account Service unreachable for eventId {EventId}", eventId);
+            logger.LogWarning(ex, "Account Service unreachable for eventId {EventId}", eventId);
             return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
         }
 
@@ -54,7 +54,7 @@ public sealed class SubmitEventHandler(
         {
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogError(
+                logger.LogWarning(
                     "Account Service returned {StatusCode} for eventId {EventId}", response.StatusCode, eventId);
                 return new SubmitEventResult(SubmitEventOutcome.AccountServiceUnavailable, null);
             }

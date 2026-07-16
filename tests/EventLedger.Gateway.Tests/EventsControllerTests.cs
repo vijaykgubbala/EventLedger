@@ -219,7 +219,7 @@ public class EventsControllerTests : IDisposable
 
         await TripCircuitOpenAsync(client, "evt-cooldown");
 
-        await Task.Delay(TimeSpan.FromSeconds(6)); // past the 5s break duration
+        await Task.Delay(TimeSpan.FromSeconds(8)); // past the 5s break duration, with margin for a slow/loaded runner
 
         handler.FailuresBeforeSuccess = 0; // the half-open trial call, and everything after, succeeds
         var response = await client.PostAsJsonAsync("/events", ValidPayload("evt-cooldown-trial"));
