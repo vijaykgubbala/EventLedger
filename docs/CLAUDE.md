@@ -12,10 +12,10 @@ per-subrepo `docs/` root).
 
 | Directory | Purpose | Lifecycle |
 |---|---|---|
-| `brainstorms/` | Structured problem exploration before planning (`workflow-brainstorm`) | Dated, immutable |
-| `plans/` | Research-backed implementation plans with checkboxes (`workflow-plan`) | Dated, checked off during execution |
+| `brainstorms/` | Structured problem exploration before planning (`workflow-brainstorm`) | Issue-anchored, immutable |
+| `plans/` | Research-backed implementation plans with checkboxes (`workflow-plan`) | Issue-anchored, checked off during execution |
 | `handoffs/` | Implementation handoff — release notes, risk analysis, test coverage (`workflow-handoff`) | Dated, immutable |
-| `reviews/` | Code review artifacts (JSON) with finding dispositions (`workflow-review`) | Dated, updated during walkthrough |
+| `reviews/` | Code review artifacts (JSON) with finding dispositions (`workflow-review`) | Issue-anchored, updated during walkthrough |
 | `solutions/` | Solved problems and decisions organized by category (`workflow-compound`) | Dated, immutable |
 | `patterns/` | General patterns, conventions, and recurring themes — **already exists**, seeded from the initial scaffold pass | Dated, can be updated when new examples emerge |
 | `workflow-recommendations/` | Pending improvements to the workflow tooling itself | Status-tracked (pending/completed/stale) |
@@ -35,7 +35,7 @@ Link related docs across subdirectories using relative paths:
 - Solutions link to the plans and reviews that produced them
 - Patterns reference related solutions
 
-Format: `See also: [title](../plans/2026-07-20-feature-resiliency-plan.md)`
+Format: `See also: [title](../plans/6_resiliency-plan.md)`
 
 ## Patterns
 
@@ -60,6 +60,17 @@ the issue itself stays the short, stable record (title, acceptance
 criteria, milestone); the deep artifact (brainstorm reasoning, the full
 plan, the review findings) lives here and gets linked back via a comment
 on the issue.
+
+**Naming convention**: brainstorm, plan, and review filenames — and the
+`workflow-execute` branch they're built on — are all anchored to the
+issue number, not a date: `docs/brainstorms/<issue-id>_<slug>-brainstorm.md`,
+`docs/plans/<issue-id>_<slug>-plan.md`, `docs/reviews/<issue-id>_<slug>.json`,
+and branch `<issue-id>_<slug>` (e.g. `2_core-functionality`). The issue
+number is the permanent identifier; a date only says when the file was
+written, which matters less than which story it belongs to. `handoffs/`,
+`solutions/`, and `patterns/` stay date-prefixed (`YYYY-MM-DD-...`) —
+handoffs and solutions aren't always tied to a single issue, and patterns
+are explicitly cross-cutting.
 
 ## Relationship to `architecture/` and `standards/`
 

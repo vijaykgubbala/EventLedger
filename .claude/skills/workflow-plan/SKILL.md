@@ -40,7 +40,7 @@ Invoke the `architecture-guide` skill with a one-sentence description of what th
 Before writing the plan, review all research output and identify every risk, unknown, ambiguity, or decision point. This includes:
 - Multiple valid implementation approaches where the choice affects architecture
 - Ambiguous requirements not resolved by the issue body or brainstorm — cross-check against the ambiguities already catalogued for this project if relevant (idempotency-on-mismatched-payload, the Gateway balance-endpoint gap, etc.)
-- If the plan defines or modifies a public `Task<T>`/`Task` method, flag a missing `CancellationToken cancellationToken = default` as a pre-publish gap — see [docs/patterns/2026-07-15-cancellation-token-propagation.md](../../../docs/patterns/2026-07-15-cancellation-token-propagation.md).
+- If the plan adds or modifies any async method in the call chain from a controller action down to a repository/EF Core call or an outbound `HttpClient` call, check that every step threads a `CancellationToken` parameter through to the next call rather than dropping it after the first `await` — see [docs/patterns/2026-07-15-cancellation-token-propagation.md](../../../docs/patterns/2026-07-15-cancellation-token-propagation.md). Note this explicitly as an implementation-step detail rather than a question to ask the user; there's no real alternative worth presenting as a choice.
 
 If none exist, proceed to Step 4.
 
@@ -50,7 +50,14 @@ If risks exist, use `AskUserQuestion` to present them — one question per disti
 
 Create `docs/plans/` if it does not exist yet.
 
-Write the plan to `docs/plans/YYYY-MM-DD-<type>-<name>-plan.md` using today's date. `<type>` reflects the nature of the work (`feature`, `fix`, `refactor`, `infra`, `docs`). `<name>` is a short slug.
+Write the plan to `docs/plans/<issue-id>_<name>-plan.md` when an issue
+was resolved in Step 0 (`<issue-id>` bare, e.g. `2`) — matching
+`workflow-brainstorm`'s convention, so a plan and its brainstorm share
+the same issue-anchored prefix and sort together. `<name>` is a short
+slug. For a free-text topic with no issue, fall back to
+`docs/plans/YYYY-MM-DD-<type>-<name>-plan.md` (`<type>` from `feature`,
+`fix`, `refactor`, `infra`, `docs`), since there's no issue number to
+anchor to.
 
 ### Document structure
 
